@@ -1,8 +1,36 @@
-import type { ActionRequest, Decision } from "@agentgate/core";
+import type { ActionRequest, ApprovalRecord, CodeChangeRisk, Decision } from "@agentgate/core";
 
 export interface AgentGateClientOptions {
   baseUrl: string;
   fetcher?: typeof fetch;
+}
+
+export interface AgentGateActionRequest {
+  action: string;
+  agentId: string;
+  changedFiles?: string[];
+  deletedFiles?: string[];
+  diffText?: string;
+  input?: ActionRequest["input"];
+  integration: string;
+  repository?: string;
+  sourceTrust?: ActionRequest["sourceTrust"];
+  target?: string;
+}
+
+export interface AgentGateAuthorizeResponse {
+  auditEventId?: string;
+  decision: Decision;
+  risk?: CodeChangeRisk;
+}
+
+export interface AgentGateExecuteResponse extends AgentGateAuthorizeResponse {
+  approval?: ApprovalRecord;
+  execution?: {
+    data: Record<string, unknown>;
+    externalRequestId?: string;
+    ok: boolean;
+  };
 }
 
 export class AgentGateClient {
@@ -14,9 +42,27 @@ export class AgentGateClient {
     this.fetcher = options.fetcher ?? fetch;
   }
 
-  async authorize(request: ActionRequest): Promise<Decision> {
-    const response = await this.fetcher(`${this.baseUrl}/v1/actions/authorize`, {
-      body: JSON.stringify(request),
+  async authorize(request: AgentGateActionRequest): Promise<Decision> {
+    const response = await this.postJson<AgentGateAuthorizeResponse | Decision>(
+      "/v1/actions/authorize",
+      request,
+      "authorization",
+    );
+
+    return "decision" in response ? response.decision : response;
+  }
+
+  async execute(request: AgentGateActionRequest): Promise<AgentGateExecuteResponse> {
+    return this.postJson("/v1/actions/execute", request, "execution");
+  }
+
+  private async postJson<T>(
+    path: string,
+    body: AgentGateActionRequest,
+    failureLabel: string,
+  ): Promise<T> {
+    const response = await this.fetcher(`${this.baseUrl}${path}`, {
+      body: JSON.stringify(body),
       headers: {
         "content-type": "application/json",
       },
@@ -24,10 +70,9 @@ export class AgentGateClient {
     });
 
     if (!response.ok) {
-      throw new Error(`AgentGate authorization failed with HTTP ${response.status}.`);
+      throw new Error(`AgentGate ${failureLabel} failed with HTTP ${response.status}.`);
     }
 
-    return (await response.json()) as Decision;
+    return (await response.json()) as T;
   }
 }
-

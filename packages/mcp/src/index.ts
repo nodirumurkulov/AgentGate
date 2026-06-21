@@ -1,8 +1,22 @@
+import type { AgentGateActionRequest } from "@agentgate/sdk";
+
 export interface GuardedMcpTool {
   action: string;
   description: string;
   integration: string;
   name: string;
+}
+
+export interface GuardedMcpToolArguments {
+  agentId: string;
+  changedFiles?: string[];
+  deletedFiles?: string[];
+  diffText?: string;
+  repository: string;
+}
+
+export interface AgentGateMcpClient {
+  execute(request: AgentGateActionRequest): Promise<unknown>;
 }
 
 export const guardedMcpTools: GuardedMcpTool[] = [
@@ -31,3 +45,32 @@ export const guardedMcpTools: GuardedMcpTool[] = [
     name: "agentgate.slack.request_code_change_approval",
   },
 ];
+
+export async function callGuardedTool(
+  name: string,
+  args: GuardedMcpToolArguments,
+  client: AgentGateMcpClient,
+): Promise<unknown> {
+  const tool = guardedMcpTools.find((item) => item.name === name);
+
+  if (!tool) {
+    throw new Error("Unknown AgentGate MCP tool.");
+  }
+
+  return client.execute(createActionRequest(tool, args));
+}
+
+function createActionRequest(
+  tool: GuardedMcpTool,
+  args: GuardedMcpToolArguments,
+): AgentGateActionRequest {
+  return {
+    action: tool.action,
+    agentId: args.agentId,
+    ...(args.changedFiles ? { changedFiles: args.changedFiles } : {}),
+    ...(args.deletedFiles ? { deletedFiles: args.deletedFiles } : {}),
+    ...(args.diffText ? { diffText: args.diffText } : {}),
+    integration: tool.integration,
+    repository: args.repository,
+  };
+}
