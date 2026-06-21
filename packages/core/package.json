@@ -11,6 +11,7 @@
     "test": "vitest run src/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "dependencies": {},
-  "devDependencies": {}
+  "dependencies": {
+    "yaml": "2.9.0"
+  }
 }
