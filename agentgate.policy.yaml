@@ -1,0 +1,43 @@
+version: 1
+defaultDecision: block
+agents:
+  security-triage-agent:
+    description: Agent that investigates suspicious issues and coordinates response.
+rules:
+  - id: allow-read-context
+    description: Allow the triage agent to read GitHub issues and Notion pages.
+    effect: allow
+    agents:
+      - security-triage-agent
+    integrations:
+      - github
+      - notion
+    actions:
+      - issues.read
+      - pages.read
+  - id: allow-safe-slack-updates
+    description: Allow status updates in the security channel.
+    effect: allow
+    agents:
+      - security-triage-agent
+    integrations:
+      - slack
+    actions:
+      - messages.post
+    resources:
+      - "#security-triage"
+  - id: require-approval-sensitive-internal-api
+    description: Require Slack approval before sensitive internal API mutations.
+    effect: approval_required
+    agents:
+      - security-triage-agent
+    integrations:
+      - internal-api
+    actions:
+      - customers.export
+      - incidents.escalate
+approval:
+  provider: slack
+  timeoutSeconds: 900
+  channel: "#security-approvals"
+

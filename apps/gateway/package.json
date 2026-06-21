@@ -1,0 +1,16 @@
+{
+  "name": "@agentgate/gateway",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agentgate/core": "0.1.0",
+    "@fastify/cors": "11.2.0",
+    "fastify": "5.8.5"
+  }
+}

@@ -1,0 +1,17 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+.vite/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+data/
+*.db
+*.db-journal
+
+.DS_Store
+

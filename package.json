@@ -1,0 +1,41 @@
+{
+  "name": "agentgate",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "npm@11.6.2",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces --if-present",
+    "check": "npm run lint && npm run typecheck && npm run test",
+    "demo": "npm run dev -w @agentgate/demo-agent",
+    "dev:dashboard": "npm run dev -w @agentgate/dashboard",
+    "dev:gateway": "npm run dev -w @agentgate/gateway",
+    "dev:internal-api": "npm run dev -w @agentgate/internal-api",
+    "format": "prettier --write .",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "typecheck": "npm run typecheck --workspaces --if-present"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "26.0.0",
+    "@types/react": "19.2.17",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.2",
+    "eslint": "10.5.0",
+    "globals": "17.6.0",
+    "prettier": "3.8.4",
+    "tsx": "4.22.4",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.61.1",
+    "vite": "8.0.16",
+    "vitest": "4.1.9"
+  }
+}

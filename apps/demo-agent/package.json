@@ -1,0 +1,16 @@
+{
+  "name": "@agentgate/demo-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit",
+    "dev": "tsx src/index.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@agentgate/core": "0.1.0",
+    "@agentgate/sdk": "0.1.0"
+  },
+  "devDependencies": {}
+}
