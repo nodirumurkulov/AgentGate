@@ -105,5 +105,87 @@ describe("gateway app", () => {
       riskLevel: "high",
     });
   });
-});
 
+  it("executes allowed low-risk pull request actions", async () => {
+    const app = createGatewayApp();
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "pull_requests.create",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        integration: "github",
+        repository: "nodirumurkulov/AgentGate",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      decision: {
+        outcome: "allow",
+      },
+      execution: {
+        ok: true,
+      },
+      risk: {
+        level: "low",
+      },
+    });
+  });
+
+  it("creates a pending approval for high-risk pull request actions", async () => {
+    const app = createGatewayApp();
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "pull_requests.update",
+        agentId: "coding-agent",
+        changedFiles: ["src/auth/session.ts"],
+        integration: "github",
+        repository: "nodirumurkulov/AgentGate",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      approval: {
+        action: "pull_requests.update",
+        repository: "nodirumurkulov/AgentGate",
+        riskLevel: "high",
+        status: "pending",
+      },
+      decision: {
+        outcome: "approval_required",
+      },
+    });
+    expect(response.json().execution).toBeUndefined();
+  });
+
+  it("does not execute blocked repository actions", async () => {
+    const app = createGatewayApp();
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "branches.push_direct",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        integration: "github",
+        repository: "nodirumurkulov/AgentGate",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(403);
+    expect(response.json()).toMatchObject({
+      decision: {
+        outcome: "block",
+      },
+    });
+    expect(response.json().execution).toBeUndefined();
+  });
+});
