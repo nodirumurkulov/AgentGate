@@ -5,11 +5,10 @@ const client = new AgentGateClient({
 });
 
 const decision = await client.authorize({
-  action: "issues.read",
-  agentId: "security-triage-agent",
+  action: "pull_requests.create",
+  agentId: "coding-agent",
   integration: "github",
-  target: "nodirumurkulov/AgentGate#1",
+  target: "risk:low",
 });
 
 console.log("AgentGate decision:", decision.outcome, decision.reason);
-

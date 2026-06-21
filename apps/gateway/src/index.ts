@@ -6,11 +6,12 @@ const policy: PolicyDocument = {
   defaultDecision: "block",
   rules: [
     {
-      actions: ["issues.read"],
-      agents: ["security-triage-agent"],
+      actions: ["pull_requests.create", "pull_requests.update"],
+      agents: ["coding-agent"],
       effect: "allow",
-      id: "allow-security-triage-issue-read",
+      id: "allow-low-risk-pr-actions",
       integrations: ["github"],
+      resources: ["risk:low"],
     },
   ],
   version: 1,
@@ -44,4 +45,3 @@ if (import.meta.url === `file://${process.argv[1]}`) {
     port,
   });
 }
-

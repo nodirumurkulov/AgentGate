@@ -1,19 +1,20 @@
 # AgentGate
 
-AgentGate is a small security layer for AI agents.
+AgentGate prevents AI coding agents from landing high-risk repository changes without policy approval.
 
-The idea is simple: before an agent uses a tool, AgentGate checks if that action is allowed. It can allow the action, block it, or ask a human to approve it first.
+The idea is simple: before an agent creates, updates, or merges a pull request, AgentGate inspects the requested GitHub action, changed files, and diff risk. It can allow low-risk changes, block forbidden changes, or ask a human to approve high-risk changes first.
 
-The first version will focus on GitHub, Slack, Notion, and a sample internal API.
+The first version focuses on GitHub repository changes, Slack approval, and an auditable read-only dashboard.
 
 ## What it will do
 
-- Check agent actions before they run.
-- Use simple policy rules from `agentgate.policy.yaml`.
-- Block risky actions by default.
-- Send approval requests to Slack when a human should decide.
-- Keep an audit log of what happened and why.
-- Show recent decisions in a read-only dashboard.
+- Inspect proposed code changes before GitHub PR actions run.
+- Classify changed files and diffs as low, medium, or high risk.
+- Allow low-risk PR creation and update actions.
+- Require Slack approval for high-risk code changes.
+- Block forbidden changes by default.
+- Keep an audit log of what changed, what risk was found, and why AgentGate decided.
+- Show recent decisions and approval outcomes in a read-only dashboard.
 
 ## Current repo setup
 
@@ -45,15 +46,15 @@ npm run dev:internal-api
 ```text
 apps/
   dashboard/     read-only UI for logs and status
-  gateway/       API service for checks and approvals
-  internal-api/  local sample API with sensitive actions
+  gateway/       API service for code-change checks and approvals
+  internal-api/  later sample API for non-GitHub workflows
 packages/
-  core/          policy and decision logic
-  integrations/  external service adapters
-  mcp/           MCP tool wrapper
+  core/          policy, diff risk, and decision logic
+  integrations/  GitHub and Slack adapter seams
+  mcp/           MCP tool wrapper for coding agents
   sdk/           TypeScript client
 ```
 
 ## Example flow
 
-The agent will read a suspicious GitHub issue, check related Notion notes, post a Slack update, and try to call a sensitive internal API. AgentGate will decide which steps are safe and which ones need approval.
+An AI coding agent proposes a pull request. AgentGate inspects the diff and changed files, notices the change touches authentication and deletes a test, requests Slack approval, and records the decision trail. A low-risk documentation-only PR can proceed without approval.

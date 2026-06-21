@@ -1,43 +1,46 @@
 version: 1
 defaultDecision: block
 agents:
-  security-triage-agent:
-    description: Agent that investigates suspicious issues and coordinates response.
+  coding-agent:
+    description: AI coding agent that proposes repository changes.
 rules:
-  - id: allow-read-context
-    description: Allow the triage agent to read GitHub issues and Notion pages.
+  - id: allow-low-risk-pr-actions
+    description: Allow low-risk pull request creation and updates.
     effect: allow
     agents:
-      - security-triage-agent
+      - coding-agent
     integrations:
       - github
-      - notion
     actions:
-      - issues.read
-      - pages.read
-  - id: allow-safe-slack-updates
-    description: Allow status updates in the security channel.
-    effect: allow
-    agents:
-      - security-triage-agent
-    integrations:
-      - slack
-    actions:
-      - messages.post
+      - pull_requests.create
+      - pull_requests.update
     resources:
-      - "#security-triage"
-  - id: require-approval-sensitive-internal-api
-    description: Require Slack approval before sensitive internal API mutations.
+      - risk:low
+  - id: require-approval-high-risk-code-changes
+    description: Require Slack approval before landing high-risk repository changes.
     effect: approval_required
     agents:
-      - security-triage-agent
+      - coding-agent
     integrations:
-      - internal-api
+      - github
     actions:
-      - customers.export
-      - incidents.escalate
+      - pull_requests.create
+      - pull_requests.update
+      - pull_requests.merge
+    resources:
+      - risk:high
+  - id: block-forbidden-code-changes
+    description: Block direct pushes, secret changes, and protected workflow bypasses.
+    effect: block
+    agents:
+      - coding-agent
+    integrations:
+      - github
+    actions:
+      - branches.push_direct
+      - secrets.update
+      - checks.bypass
 approval:
   provider: slack
   timeoutSeconds: 900
-  channel: "#security-approvals"
-
+  channel: "#code-review-approvals"

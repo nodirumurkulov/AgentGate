@@ -5,53 +5,55 @@ const policy: PolicyDocument = {
   defaultDecision: "block",
   rules: [
     {
-      actions: ["issues.read"],
-      agents: ["security-triage-agent"],
+      actions: ["pull_requests.create", "pull_requests.update"],
+      agents: ["coding-agent"],
       effect: "allow",
-      id: "allow-issue-read",
+      id: "allow-low-risk-pr-actions",
       integrations: ["github"],
+      resources: ["risk:low"],
     },
     {
-      actions: ["customers.export"],
-      agents: ["security-triage-agent"],
+      actions: ["pull_requests.create", "pull_requests.update", "pull_requests.merge"],
+      agents: ["coding-agent"],
       effect: "approval_required",
-      id: "approve-customer-export",
-      integrations: ["internal-api"],
+      id: "approve-high-risk-code-changes",
+      integrations: ["github"],
+      resources: ["risk:high"],
     },
     {
-      actions: ["secrets.read"],
-      agents: ["security-triage-agent"],
+      actions: ["branches.push_direct", "secrets.update", "checks.bypass"],
+      agents: ["coding-agent"],
       effect: "block",
-      id: "block-secret-read",
-      integrations: ["internal-api"],
+      id: "block-forbidden-code-changes",
+      integrations: ["github"],
     },
   ],
   version: 1,
 };
 
 describe("evaluateAction", () => {
-  it("allows matching least-privilege read actions", () => {
+  it("allows low-risk pull request actions", () => {
     const decision = evaluateAction(
       {
-        action: "issues.read",
-        agentId: "security-triage-agent",
+        action: "pull_requests.create",
+        agentId: "coding-agent",
         integration: "github",
-        target: "nodirumurkulov/AgentGate#1",
+        target: "risk:low",
       },
       policy,
     );
 
     expect(decision.outcome).toBe("allow");
-    expect(decision.reason).toContain("allow-issue-read");
+    expect(decision.reason).toContain("allow-low-risk-pr-actions");
   });
 
-  it("requires approval for sensitive internal actions", () => {
+  it("requires approval for high-risk pull request actions", () => {
     const decision = evaluateAction(
       {
-        action: "customers.export",
-        agentId: "security-triage-agent",
-        integration: "internal-api",
-        target: "customers",
+        action: "pull_requests.update",
+        agentId: "coding-agent",
+        integration: "github",
+        target: "risk:high",
       },
       policy,
     );
@@ -62,10 +64,10 @@ describe("evaluateAction", () => {
   it("lets explicit block rules override approval rules", () => {
     const decision = evaluateAction(
       {
-        action: "secrets.read",
-        agentId: "security-triage-agent",
-        integration: "internal-api",
-        target: "vault",
+        action: "secrets.update",
+        agentId: "coding-agent",
+        integration: "github",
+        target: "risk:high",
       },
       policy,
     );
@@ -77,7 +79,7 @@ describe("evaluateAction", () => {
     const decision = evaluateAction(
       {
         action: "repos.delete",
-        agentId: "security-triage-agent",
+        agentId: "coding-agent",
         integration: "github",
         target: "nodirumurkulov/AgentGate",
       },
@@ -99,4 +101,3 @@ describe("detectPromptInjection", () => {
     expect(findings.map((finding) => finding.category)).toContain("credential_exfiltration");
   });
 });
-

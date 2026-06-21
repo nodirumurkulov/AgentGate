@@ -1,7 +1,7 @@
 const decisionCounts = [
-  { label: "Allowed", value: 12 },
-  { label: "Approval required", value: 3 },
-  { label: "Blocked", value: 5 },
+  { label: "Low risk allowed", value: 12 },
+  { label: "High risk approval", value: 3 },
+  { label: "Blocked changes", value: 5 },
 ];
 
 export function App() {
@@ -10,10 +10,10 @@ export function App() {
       <section className="hero">
         <div>
           <p className="eyebrow">AgentGate</p>
-          <h1>Runtime authorization for AI-agent actions</h1>
+          <h1>Approval gates for AI-generated code changes</h1>
           <p className="summary">
-            Review policy decisions, pending approvals, integration health, and audit evidence from
-            one read-only surface.
+            Review pull request risk decisions, approval outcomes, changed-file evidence, and
+            audit history from one read-only surface.
           </p>
         </div>
       </section>
@@ -29,11 +29,10 @@ export function App() {
 
       <section className="panel">
         <div>
-          <h2>Recent decision trail</h2>
-          <p>Gateway audit events will appear here once the API is connected.</p>
+          <h2>Recent code-change decisions</h2>
+          <p>Pull request risk decisions will appear here once the API is connected.</p>
         </div>
       </section>
     </main>
   );
 }
-

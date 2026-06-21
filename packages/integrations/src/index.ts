@@ -11,7 +11,6 @@ export interface IntegrationResult {
   ok: boolean;
 }
 
-export const plannedIntegrations = ["github", "slack", "notion", "internal-api"] as const;
+export const plannedIntegrations = ["github", "slack"] as const;
 
 export type PlannedIntegration = (typeof plannedIntegrations)[number];
-

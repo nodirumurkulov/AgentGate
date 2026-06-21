@@ -7,28 +7,27 @@ export interface GuardedMcpTool {
 
 export const guardedMcpTools: GuardedMcpTool[] = [
   {
-    action: "issues.read",
-    description: "Read a GitHub issue through AgentGate authorization.",
+    action: "pull_requests.create",
+    description: "Create a low-risk GitHub pull request through AgentGate authorization.",
     integration: "github",
-    name: "agentgate.github.read_issue",
+    name: "agentgate.github.create_pull_request",
+  },
+  {
+    action: "pull_requests.update",
+    description: "Update a GitHub pull request through AgentGate authorization.",
+    integration: "github",
+    name: "agentgate.github.update_pull_request",
+  },
+  {
+    action: "pull_requests.merge",
+    description: "Merge a GitHub pull request after AgentGate authorization.",
+    integration: "github",
+    name: "agentgate.github.merge_pull_request",
   },
   {
     action: "messages.post",
-    description: "Post a Slack message through AgentGate authorization.",
+    description: "Send a Slack approval notification for high-risk code changes.",
     integration: "slack",
-    name: "agentgate.slack.post_message",
-  },
-  {
-    action: "pages.read",
-    description: "Read a Notion page through AgentGate authorization.",
-    integration: "notion",
-    name: "agentgate.notion.read_page",
-  },
-  {
-    action: "incidents.escalate",
-    description: "Escalate an incident through AgentGate authorization.",
-    integration: "internal-api",
-    name: "agentgate.internal.escalate_incident",
+    name: "agentgate.slack.request_code_change_approval",
   },
 ];
-
