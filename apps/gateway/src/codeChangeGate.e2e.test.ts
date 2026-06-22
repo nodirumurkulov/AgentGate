@@ -69,5 +69,42 @@ describe("code-change gate fixture flow", () => {
       },
     });
     expect(branchPush.json().execution).toBeUndefined();
+
+    const auditTrail = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+
+    const auditEvents = auditTrail.json().events;
+
+    expect(auditTrail.statusCode).toBe(200);
+    expect(auditEvents).toHaveLength(3);
+    expect(auditEvents).toMatchObject([
+      {
+        action: "pull_requests.create",
+        changedFiles: ["README.md"],
+        decision: "allow",
+        id: docsOnly.json().auditEventId,
+        previousHash: "genesis",
+        riskLevel: "low",
+      },
+      {
+        action: "pull_requests.update",
+        changedFiles: ["src/auth/session.ts"],
+        decision: "approval_required",
+        id: authUpdate.json().auditEventId,
+        previousHash: auditEvents[0].hash,
+        riskLevel: "high",
+        riskReasons: ["Authentication or authorization code changed."],
+      },
+      {
+        action: "branches.push_direct",
+        changedFiles: ["README.md"],
+        decision: "block",
+        id: branchPush.json().auditEventId,
+        previousHash: auditEvents[1].hash,
+        riskLevel: "low",
+      },
+    ]);
   });
 });
