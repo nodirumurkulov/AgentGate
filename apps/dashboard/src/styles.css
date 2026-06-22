@@ -130,6 +130,30 @@ h1 {
   font-size: 1rem;
 }
 
+.audit-meta {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+}
+
+.audit-meta div {
+  display: grid;
+  gap: 3px;
+}
+
+.audit-meta dt {
+  color: #607078;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.audit-meta dd {
+  overflow-wrap: anywhere;
+  margin: 0;
+  color: #2c3a41;
+  font-size: 0.85rem;
+}
+
 .decision-labels {
   display: flex;
   flex-wrap: wrap;

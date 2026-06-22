@@ -48,6 +48,18 @@ export function App({ initialAuditEvents = [] }: AppProps) {
                   </div>
                   <h3>{event.action}</h3>
                   <p>{event.repository}</p>
+                  <dl className="audit-meta">
+                    <div>
+                      <dt>Audit ID</dt>
+                      <dd>{event.id}</dd>
+                    </div>
+                    <div>
+                      <dt>Recorded</dt>
+                      <dd>
+                        <time dateTime={event.timestamp}>{event.timestamp}</time>
+                      </dd>
+                    </div>
+                  </dl>
                 </div>
 
                 <div className="evidence-group">

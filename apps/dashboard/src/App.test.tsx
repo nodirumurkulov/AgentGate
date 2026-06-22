@@ -25,6 +25,8 @@ describe("App", () => {
 
     expect(screen.getByText("block")).toBeTruthy();
     expect(screen.getByText("high")).toBeTruthy();
+    expect(screen.getByText("audit_1")).toBeTruthy();
+    expect(screen.getByText("2026-06-21T00:00:00.000Z")).toBeTruthy();
     expect(screen.getByText("src/auth/session.ts")).toBeTruthy();
     expect(screen.getByText("Authentication or authorization code changed.")).toBeTruthy();
   });
