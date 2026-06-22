@@ -7,12 +7,12 @@ const client = new AgentGateClient({
 
 for (const scenario of buildCodeChangeScenarios()) {
   try {
-    const result = await client.execute(scenario);
+    const result = await client.execute(scenario.request);
 
-    console.log("AgentGate scenario:", scenario.action, result.decision.outcome);
+    console.log("AgentGate scenario:", scenario.name, scenario.expectedOutcome, result.decision.outcome);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown AgentGate error.";
 
-    console.log("AgentGate scenario:", scenario.action, message);
+    console.log("AgentGate scenario:", scenario.name, scenario.expectedOutcome, message);
   }
 }
