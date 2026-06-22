@@ -279,6 +279,45 @@ describe("gateway app", () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  it("rejects Slack approval callbacks with unsupported decisions", async () => {
+    const app = createGatewayApp({ slackSigningSecret });
+    const approval = await createPendingApproval(app);
+    const payload = {
+      approvalId: approval.id,
+      decidedBy: "security-reviewer",
+      decision: "archive",
+    };
+
+    const response = await app.inject({
+      headers: signedSlackHeaders(payload),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_slack_payload" });
+  });
+
+  it("rejects Slack approval callbacks without an approval actor", async () => {
+    const app = createGatewayApp({ slackSigningSecret });
+    const approval = await createPendingApproval(app);
+    const payload = {
+      approvalId: approval.id,
+      decision: "approve",
+    };
+
+    const response = await app.inject({
+      headers: signedSlackHeaders(payload),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_slack_payload" });
+  });
 });
 
 async function createPendingApproval(app: ReturnType<typeof createGatewayApp>) {

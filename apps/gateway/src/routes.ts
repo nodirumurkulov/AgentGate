@@ -122,7 +122,7 @@ export function registerRoutes(
     events: store.listAuditEvents(),
   }));
 
-  server.post<{ Body: SlackApprovalCallbackBody }>("/v1/slack/approvals", async (request, reply) => {
+  server.post<{ Body: unknown }>("/v1/slack/approvals", async (request, reply) => {
     const signature = readHeader(request.headers["x-slack-signature"]);
     const timestamp = readHeader(request.headers["x-slack-request-timestamp"]);
     const bodyText = JSON.stringify(request.body);
@@ -142,13 +142,19 @@ export function registerRoutes(
       return reply.code(401).send({ error: "invalid_slack_signature" });
     }
 
-    const approval = store.findApproval(request.body.approvalId);
+    const callback = parseSlackApprovalCallback(request.body);
+
+    if (!callback) {
+      return reply.code(400).send({ error: "invalid_slack_payload" });
+    }
+
+    const approval = store.findApproval(callback.approvalId);
 
     if (!approval) {
       return reply.code(404).send({ error: "approval_not_found" });
     }
 
-    const updatedApproval = transitionApprovalFromCallback(approval, request.body);
+    const updatedApproval = transitionApprovalFromCallback(approval, callback);
 
     store.replaceApproval(updatedApproval);
 
@@ -253,4 +259,41 @@ function transitionApprovalFromCallback(
 
 function readHeader(header: string | string[] | undefined): string | undefined {
   return Array.isArray(header) ? header[0] : header;
+}
+
+function parseSlackApprovalCallback(value: unknown): SlackApprovalCallbackBody | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const approvalId = readRequiredString(value.approvalId);
+  const decidedBy = readRequiredString(value.decidedBy);
+  const decision = value.decision;
+
+  if (!approvalId || !decidedBy || (decision !== "approve" && decision !== "deny")) {
+    return undefined;
+  }
+
+  return {
+    approvalId,
+    decidedBy,
+    decision,
+    ...(typeof value.reason === "string" && value.reason.trim()
+      ? { reason: value.reason.trim() }
+      : {}),
+  };
+}
+
+function readRequiredString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
 }
