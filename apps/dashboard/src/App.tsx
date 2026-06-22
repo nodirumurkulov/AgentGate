@@ -6,6 +6,7 @@ interface AppProps {
 
 export function App({ initialAuditEvents = [] }: AppProps) {
   const decisionCounts = countDecisions(initialAuditEvents);
+  const sortedAuditEvents = sortAuditEventsNewestFirst(initialAuditEvents);
 
   return (
     <main className="shell">
@@ -39,7 +40,7 @@ export function App({ initialAuditEvents = [] }: AppProps) {
           <p className="empty-state">Pull request risk decisions will appear here once the API is connected.</p>
         ) : (
           <div className="decision-list">
-            {initialAuditEvents.map((event) => (
+            {sortedAuditEvents.map((event) => (
               <article className="decision-row" key={event.id}>
                 <div className="decision-main">
                   <div className="decision-labels">
@@ -86,6 +87,10 @@ export function App({ initialAuditEvents = [] }: AppProps) {
       </section>
     </main>
   );
+}
+
+function sortAuditEventsNewestFirst(events: DashboardAuditEvent[]): DashboardAuditEvent[] {
+  return [...events].sort((left, right) => Date.parse(right.timestamp) - Date.parse(left.timestamp));
 }
 
 function countDecisions(events: DashboardAuditEvent[]) {
