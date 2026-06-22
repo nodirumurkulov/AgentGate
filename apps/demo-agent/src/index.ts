@@ -1,14 +1,18 @@
 import { AgentGateClient } from "@agentgate/sdk";
+import { buildCodeChangeScenarios } from "./scenario";
 
 const client = new AgentGateClient({
   baseUrl: process.env.AGENTGATE_BASE_URL ?? "http://localhost:4010",
 });
 
-const decision = await client.authorize({
-  action: "pull_requests.create",
-  agentId: "coding-agent",
-  integration: "github",
-  target: "risk:low",
-});
+for (const scenario of buildCodeChangeScenarios()) {
+  try {
+    const result = await client.execute(scenario.request);
 
-console.log("AgentGate decision:", decision.outcome, decision.reason);
+    console.log("AgentGate scenario:", scenario.name, scenario.expectedOutcome, result.decision.outcome);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unknown AgentGate error.";
+
+    console.log("AgentGate scenario:", scenario.name, scenario.expectedOutcome, message);
+  }
+}
