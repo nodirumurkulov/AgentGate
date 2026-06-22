@@ -1,6 +1,8 @@
 import {
+  approveApproval,
   classifyCodeChangeRisk,
   createAuditEvent,
+  denyApproval,
   evaluateAction,
   type ActionRequest,
   type ApprovalRecord,
@@ -10,6 +12,7 @@ import {
 } from "@agentgate/core";
 import type { FastifyInstance } from "fastify";
 import type { GatewayAdapters } from "./adapters/fixtureAdapters";
+import { verifySlackSignature } from "./slackSignature";
 import type { MemoryStore } from "./stores/memoryStore";
 
 interface CodeChangeActionBody {
@@ -20,6 +23,13 @@ interface CodeChangeActionBody {
   diffText?: string;
   integration: string;
   repository: string;
+}
+
+interface SlackApprovalCallbackBody {
+  approvalId: string;
+  decidedBy: string;
+  decision: "approve" | "deny";
+  reason?: string;
 }
 
 const policy: PolicyDocument = {
@@ -56,6 +66,7 @@ export function registerRoutes(
   server: FastifyInstance,
   store: MemoryStore,
   adapters: GatewayAdapters,
+  slackSigningSecret: string,
 ): void {
   server.get("/health", async () => ({
     service: "agentgate-gateway",
@@ -110,6 +121,45 @@ export function registerRoutes(
   server.get("/v1/audit", async () => ({
     events: store.listAuditEvents(),
   }));
+
+  server.post<{ Body: unknown }>("/v1/slack/approvals", async (request, reply) => {
+    const signature = readHeader(request.headers["x-slack-signature"]);
+    const timestamp = readHeader(request.headers["x-slack-request-timestamp"]);
+    const bodyText = JSON.stringify(request.body);
+
+    if (!signature || !timestamp || !slackSigningSecret) {
+      return reply.code(401).send({ error: "invalid_slack_signature" });
+    }
+
+    const signatureValid = verifySlackSignature({
+      body: bodyText,
+      signature,
+      signingSecret: slackSigningSecret,
+      timestamp,
+    });
+
+    if (!signatureValid) {
+      return reply.code(401).send({ error: "invalid_slack_signature" });
+    }
+
+    const callback = parseSlackApprovalCallback(request.body);
+
+    if (!callback) {
+      return reply.code(400).send({ error: "invalid_slack_payload" });
+    }
+
+    const approval = store.findApproval(callback.approvalId);
+
+    if (!approval) {
+      return reply.code(404).send({ error: "approval_not_found" });
+    }
+
+    const updatedApproval = transitionApprovalFromCallback(approval, callback);
+
+    store.replaceApproval(updatedApproval);
+
+    return { approval: updatedApproval };
+  });
 }
 
 function authorizeCodeChange(body: CodeChangeActionBody, store: MemoryStore) {
@@ -188,4 +238,62 @@ function createPendingApproval(
     riskReasons: risk.reasons,
     status: "pending",
   };
+}
+
+function transitionApprovalFromCallback(
+  approval: ApprovalRecord,
+  body: SlackApprovalCallbackBody,
+): ApprovalRecord {
+  const input = {
+    decidedAt: new Date().toISOString(),
+    decidedBy: body.decidedBy,
+    ...(body.reason ? { reason: body.reason } : {}),
+  };
+
+  if (body.decision === "approve") {
+    return approveApproval(approval, input);
+  }
+
+  return denyApproval(approval, input);
+}
+
+function readHeader(header: string | string[] | undefined): string | undefined {
+  return Array.isArray(header) ? header[0] : header;
+}
+
+function parseSlackApprovalCallback(value: unknown): SlackApprovalCallbackBody | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const approvalId = readRequiredString(value.approvalId);
+  const decidedBy = readRequiredString(value.decidedBy);
+  const decision = value.decision;
+
+  if (!approvalId || !decidedBy || (decision !== "approve" && decision !== "deny")) {
+    return undefined;
+  }
+
+  return {
+    approvalId,
+    decidedBy,
+    decision,
+    ...(typeof value.reason === "string" && value.reason.trim()
+      ? { reason: value.reason.trim() }
+      : {}),
+  };
+}
+
+function readRequiredString(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+
+  return trimmed ? trimmed : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object";
 }
