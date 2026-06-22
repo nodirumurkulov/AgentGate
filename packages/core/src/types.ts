@@ -45,3 +45,4 @@ export interface InjectionFinding {
   severity: "medium" | "high";
 }
 
+export type CodeRiskLevel = "low" | "medium" | "high";

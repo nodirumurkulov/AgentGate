@@ -1,4 +1,4 @@
-export type CodeRiskLevel = "low" | "medium" | "high";
+import type { CodeRiskLevel } from "./types";
 
 export interface CodeChangeRiskInput {
   changedFiles: string[];
@@ -99,4 +99,3 @@ function hasMediumRiskReason(reasons: string[]): boolean {
 function containsSecretSignal(diffText: string): boolean {
   return /\b(secret|token|password|private key|credential)\b/i.test(diffText);
 }
-
