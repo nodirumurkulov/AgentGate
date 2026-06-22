@@ -260,6 +260,25 @@ describe("gateway app", () => {
 
     expect(response.statusCode).toBe(401);
   });
+
+  it("rejects Slack approval callbacks with stale timestamps", async () => {
+    const app = createGatewayApp({ slackSigningSecret });
+    const staleTimestamp = String(Math.floor(Date.now() / 1000) - 301);
+    const payload = {
+      approvalId: "approval_1",
+      decidedBy: "security-reviewer",
+      decision: "approve",
+    };
+
+    const response = await app.inject({
+      headers: signedSlackHeaders(payload, staleTimestamp),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(401);
+  });
 });
 
 async function createPendingApproval(app: ReturnType<typeof createGatewayApp>) {
@@ -278,9 +297,11 @@ async function createPendingApproval(app: ReturnType<typeof createGatewayApp>) {
   return response.json().approval;
 }
 
-function signedSlackHeaders(payload: Record<string, string>) {
+function signedSlackHeaders(
+  payload: Record<string, string>,
+  timestamp = String(Math.floor(Date.now() / 1000)),
+) {
   const body = JSON.stringify(payload);
-  const timestamp = "1782000000";
 
   return {
     "x-slack-request-timestamp": timestamp,

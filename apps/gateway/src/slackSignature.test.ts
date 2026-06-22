@@ -12,6 +12,7 @@ describe("verifySlackSignature", () => {
     expect(
       verifySlackSignature({
         body,
+        nowSeconds: 1782000000,
         signature,
         signingSecret,
         timestamp,
@@ -23,9 +24,27 @@ describe("verifySlackSignature", () => {
     expect(
       verifySlackSignature({
         body: JSON.stringify({ action: "approve", approvalId: "approval_1" }),
+        nowSeconds: 1782000000,
         signature: "v0=invalid",
         signingSecret: "slack_signing_secret",
         timestamp: "1782000000",
+      }),
+    ).toBe(false);
+  });
+
+  it("returns false for a stale Slack timestamp", () => {
+    const body = JSON.stringify({ action: "approve", approvalId: "approval_1" });
+    const signingSecret = "slack_signing_secret";
+    const timestamp = "1782000000";
+    const signature = createSignature(signingSecret, timestamp, body);
+
+    expect(
+      verifySlackSignature({
+        body,
+        nowSeconds: 1782000301,
+        signature,
+        signingSecret,
+        timestamp,
       }),
     ).toBe(false);
   });
