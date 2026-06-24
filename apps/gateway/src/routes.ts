@@ -175,6 +175,10 @@ export function registerRoutes(
       return reply.code(400).send({ error: "invalid_github_payload" });
     }
 
+    if (githubDeliveryWasProcessed(store, deliveryId)) {
+      return reply.code(409).send({ error: "github_delivery_already_processed" });
+    }
+
     const auditEvent = appendGitHubWebhookAuditEvent({
       deliveryId,
       event,
@@ -378,6 +382,7 @@ function appendGitHubWebhookAuditEvent(input: GitHubWebhookAuditInput): AuditEve
   const repository = readRepositoryFullName(input.payload) ?? "unknown";
   const webhookAction = readRequiredString(input.payload.action) ?? "unknown";
   const pullRequestNumber = readPullRequestNumber(input.payload);
+  const requestId = createGitHubDeliveryRequestId(input.deliveryId);
   const event = createAuditEvent({
     action: `github.webhook.${input.event}.${webhookAction}`,
     changedFiles: [],
@@ -391,7 +396,7 @@ function appendGitHubWebhookAuditEvent(input: GitHubWebhookAuditInput): AuditEve
     },
     previousHash: previousEvent?.hash ?? "genesis",
     repository,
-    requestId: `github_${input.deliveryId}`,
+    requestId,
     riskLevel: "low",
     riskReasons: [],
     timestamp: new Date().toISOString(),
@@ -400,6 +405,16 @@ function appendGitHubWebhookAuditEvent(input: GitHubWebhookAuditInput): AuditEve
   input.store.appendAuditEvent(event);
 
   return event;
+}
+
+function githubDeliveryWasProcessed(store: GatewayStore, deliveryId: string): boolean {
+  const requestId = createGitHubDeliveryRequestId(deliveryId);
+
+  return store.listAuditEvents().some((event) => event.requestId === requestId);
+}
+
+function createGitHubDeliveryRequestId(deliveryId: string): string {
+  return `github_${deliveryId}`;
 }
 
 function createPendingApproval(
