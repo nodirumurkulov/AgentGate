@@ -12,6 +12,7 @@ import {
 } from "@agentgate/core";
 import type { FastifyInstance } from "fastify";
 import type { GatewayAdapters } from "./adapters/types";
+import { verifyGitHubSignature } from "./githubSignature";
 import { verifySlackSignature } from "./slackSignature";
 import type { GatewayStore } from "./stores/types";
 
@@ -68,6 +69,7 @@ export function registerRoutes(
   store: GatewayStore,
   adapters: GatewayAdapters,
   slackSigningSecret: string,
+  githubWebhookSecret: string,
 ): void {
   server.addContentTypeParser(
     "application/x-www-form-urlencoded",
@@ -146,6 +148,43 @@ export function registerRoutes(
   server.get("/v1/audit", async () => ({
     events: store.listAuditEvents(),
   }));
+
+  server.post<{ Body: unknown }>("/v1/github/webhooks", async (request, reply) => {
+    const signature = readHeader(request.headers["x-hub-signature-256"]);
+    const event = readHeader(request.headers["x-github-event"]);
+    const deliveryId = readHeader(request.headers["x-github-delivery"]);
+    const bodyText = readRawBody(request);
+
+    if (!signature || !githubWebhookSecret || !bodyText) {
+      return reply.code(401).send({ error: "invalid_github_signature" });
+    }
+
+    const signatureValid = verifyGitHubSignature({
+      body: bodyText,
+      signature,
+      webhookSecret: githubWebhookSecret,
+    });
+
+    if (!signatureValid) {
+      return reply.code(401).send({ error: "invalid_github_signature" });
+    }
+
+    if (!event || !deliveryId || !isRecord(request.body)) {
+      return reply.code(400).send({ error: "invalid_github_payload" });
+    }
+
+    const auditEvent = appendGitHubWebhookAuditEvent({
+      deliveryId,
+      event,
+      payload: request.body,
+      store,
+    });
+
+    return reply.code(202).send({
+      auditEventId: auditEvent.id,
+      ok: true,
+    });
+  });
 
   server.post<{ Body: unknown }>("/v1/slack/approvals", async (request, reply) => {
     const signature = readHeader(request.headers["x-slack-signature"]);
@@ -226,6 +265,13 @@ export function registerRoutes(
   });
 }
 
+interface GitHubWebhookAuditInput {
+  deliveryId: string;
+  event: string;
+  payload: Record<string, unknown>;
+  store: GatewayStore;
+}
+
 function authorizeCodeChange(body: CodeChangeActionBody, store: GatewayStore) {
   const risk = classifyCodeChangeRisk(createRiskInput(body));
   const actionRequest = createActionRequest(body, risk.level);
@@ -289,6 +335,36 @@ function appendAuditEvent(
   return event;
 }
 
+function appendGitHubWebhookAuditEvent(input: GitHubWebhookAuditInput): AuditEvent {
+  const previousEvent = input.store.listAuditEvents().at(-1);
+  const sequence = input.store.listAuditEvents().length + 1;
+  const repository = readRepositoryFullName(input.payload) ?? "unknown";
+  const webhookAction = readRequiredString(input.payload.action) ?? "unknown";
+  const pullRequestNumber = readPullRequestNumber(input.payload);
+  const event = createAuditEvent({
+    action: `github.webhook.${input.event}.${webhookAction}`,
+    changedFiles: [],
+    decision: "allow",
+    id: `audit_${sequence}`,
+    payload: {
+      action: webhookAction,
+      deliveryId: input.deliveryId,
+      event: input.event,
+      ...(pullRequestNumber ? { pullRequestNumber } : {}),
+    },
+    previousHash: previousEvent?.hash ?? "genesis",
+    repository,
+    requestId: `github_${input.deliveryId}`,
+    riskLevel: "low",
+    riskReasons: [],
+    timestamp: new Date().toISOString(),
+  });
+
+  input.store.appendAuditEvent(event);
+
+  return event;
+}
+
 function createPendingApproval(
   body: CodeChangeActionBody,
   store: GatewayStore,
@@ -324,6 +400,23 @@ function transitionApprovalFromCallback(
 
 function readHeader(header: string | string[] | undefined): string | undefined {
   return Array.isArray(header) ? header[0] : header;
+}
+
+function readRawBody(request: unknown): string | undefined {
+  return isRecord(request) && typeof request.rawBody === "string" ? request.rawBody : undefined;
+}
+
+function readRepositoryFullName(payload: Record<string, unknown>): string | undefined {
+  const repository = isRecord(payload.repository) ? payload.repository : undefined;
+
+  return readRequiredString(repository?.full_name);
+}
+
+function readPullRequestNumber(payload: Record<string, unknown>): number | undefined {
+  const pullRequest = isRecord(payload.pull_request) ? payload.pull_request : undefined;
+  const number = pullRequest?.number;
+
+  return typeof number === "number" && Number.isInteger(number) && number > 0 ? number : undefined;
 }
 
 function parseSlackApprovalCallback(value: unknown): SlackApprovalCallbackBody | undefined {
