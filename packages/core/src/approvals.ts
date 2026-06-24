@@ -5,6 +5,7 @@ export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 export interface ApprovalRecord {
   action: string;
   actionRequest?: ActionRequest;
+  callbackToken?: string;
   decidedAt?: string;
   decidedBy?: string;
   decisionReason?: string;

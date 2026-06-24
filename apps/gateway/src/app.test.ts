@@ -553,7 +553,7 @@ describe("gateway app", () => {
       actions: [
         {
           action_id: "agentgate.approve",
-          value: approval.id,
+          value: `${approval.id}:${approval.callbackToken}`,
         },
       ],
       user: {
@@ -577,6 +577,83 @@ describe("gateway app", () => {
       id: approval.id,
       status: "approved",
     });
+  });
+
+  it("rejects Slack interaction callbacks with invalid approval tokens", async () => {
+    const app = createGatewayApp({ slackSigningSecret });
+    const approval = await createPendingApproval(app);
+    const body = createSlackInteractionBody({
+      actions: [
+        {
+          action_id: "agentgate.approve",
+          value: `${approval.id}:wrong-token`,
+        },
+      ],
+      user: {
+        id: "U123",
+      },
+    });
+
+    const response = await app.inject({
+      headers: {
+        ...signedSlackRawBodyHeaders(body),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      method: "POST",
+      payload: body,
+      url: "/v1/slack/interactions",
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "invalid_approval_token" });
+  });
+
+  it("rejects replayed Slack approval callbacks without executing twice", async () => {
+    const githubRequests: unknown[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests),
+      slackSigningSecret,
+    });
+    const approval = await createPendingApproval(app);
+    const body = createSlackInteractionBody({
+      actions: [
+        {
+          action_id: "agentgate.approve",
+          value: `${approval.id}:${approval.callbackToken}`,
+        },
+      ],
+      user: {
+        id: "U123",
+      },
+    });
+    const headers = {
+      ...signedSlackRawBodyHeaders(body),
+      "content-type": "application/x-www-form-urlencoded",
+    };
+
+    await app.inject({
+      headers,
+      method: "POST",
+      payload: body,
+      url: "/v1/slack/interactions",
+    });
+
+    const replayResponse = await app.inject({
+      headers,
+      method: "POST",
+      payload: body,
+      url: "/v1/slack/interactions",
+    });
+
+    expect(replayResponse.statusCode).toBe(409);
+    expect(replayResponse.json()).toMatchObject({
+      error: "approval_already_decided",
+      approval: {
+        id: approval.id,
+        status: "approved",
+      },
+    });
+    expect(githubRequests).toHaveLength(1);
   });
 
   it("rejects malformed Slack interaction payloads", async () => {
