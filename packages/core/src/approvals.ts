@@ -1,9 +1,10 @@
-import type { CodeRiskLevel } from "./types";
+import type { ActionRequest, CodeRiskLevel } from "./types";
 
 export type ApprovalStatus = "pending" | "approved" | "denied" | "expired";
 
 export interface ApprovalRecord {
   action: string;
+  actionRequest?: ActionRequest;
   decidedAt?: string;
   decidedBy?: string;
   decisionReason?: string;
