@@ -4,17 +4,13 @@ import type {
   IntegrationAdapter,
   IntegrationResult,
 } from "@agentgate/integrations";
+import type { GatewayAdapters } from "./types";
 
 const pullRequestActions = [
   "pull_requests.create",
   "pull_requests.update",
   "pull_requests.merge",
 ];
-
-export interface GatewayAdapters {
-  github: IntegrationAdapter;
-  slack: ApprovalNotificationAdapter;
-}
 
 export function createFixtureAdapters(): GatewayAdapters {
   return {

@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it } from "vitest";
+import type { GatewayAdapters } from "./adapters/types";
 import { createGatewayApp } from "./app";
 
 const slackSigningSecret = "test_slack_signing_secret";
@@ -168,6 +169,40 @@ describe("gateway app", () => {
     expect(response.json().execution).toBeUndefined();
   });
 
+  it("fails closed when the approval notification cannot be sent", async () => {
+    const githubExecutions: string[] = [];
+    const app = createGatewayApp({
+      adapters: createFailingSlackAdapters(githubExecutions),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "pull_requests.update",
+        agentId: "coding-agent",
+        changedFiles: ["src/auth/session.ts"],
+        integration: "github",
+        repository: "nodirumurkulov/AgentGate",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({
+      decision: {
+        outcome: "approval_required",
+      },
+      notification: {
+        data: {
+          error: "slack_unavailable",
+        },
+        ok: false,
+      },
+    });
+    expect(response.json().execution).toBeUndefined();
+    expect(githubExecutions).toEqual([]);
+  });
+
   it("does not execute blocked repository actions", async () => {
     const app = createGatewayApp();
 
@@ -239,6 +274,64 @@ describe("gateway app", () => {
       id: approval.id,
       status: "denied",
     });
+  });
+
+  it("approves a pending approval from a signed Slack interaction payload", async () => {
+    const app = createGatewayApp({ slackSigningSecret });
+    const approval = await createPendingApproval(app);
+    const body = createSlackInteractionBody({
+      actions: [
+        {
+          action_id: "agentgate.approve",
+          value: approval.id,
+        },
+      ],
+      user: {
+        id: "U123",
+      },
+    });
+
+    const response = await app.inject({
+      headers: {
+        ...signedSlackRawBodyHeaders(body),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      method: "POST",
+      payload: body,
+      url: "/v1/slack/interactions",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().approval).toMatchObject({
+      decidedBy: "U123",
+      id: approval.id,
+      status: "approved",
+    });
+  });
+
+  it("rejects malformed Slack interaction payloads", async () => {
+    const app = createGatewayApp({ slackSigningSecret });
+    const body = new URLSearchParams({
+      payload: JSON.stringify({
+        actions: [],
+        user: {
+          id: "U123",
+        },
+      }),
+    }).toString();
+
+    const response = await app.inject({
+      headers: {
+        ...signedSlackRawBodyHeaders(body),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      method: "POST",
+      payload: body,
+      url: "/v1/slack/interactions",
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json()).toEqual({ error: "invalid_slack_payload" });
   });
 
   it("rejects Slack approval callbacks with invalid signatures", async () => {
@@ -347,5 +440,49 @@ function signedSlackHeaders(
     "x-slack-signature": `v0=${createHmac("sha256", slackSigningSecret)
       .update(`v0:${timestamp}:${body}`)
       .digest("hex")}`,
+  };
+}
+
+function signedSlackRawBodyHeaders(body: string, timestamp = String(Math.floor(Date.now() / 1000))) {
+  return {
+    "x-slack-request-timestamp": timestamp,
+    "x-slack-signature": `v0=${createHmac("sha256", slackSigningSecret)
+      .update(`v0:${timestamp}:${body}`)
+      .digest("hex")}`,
+  };
+}
+
+function createSlackInteractionBody(payload: Record<string, unknown>): string {
+  return new URLSearchParams({
+    payload: JSON.stringify(payload),
+  }).toString();
+}
+
+function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters {
+  return {
+    github: {
+      integration: "github",
+      async execute(request) {
+        githubExecutions.push(request.action);
+
+        return {
+          data: {
+            action: request.action,
+          },
+          ok: true,
+        };
+      },
+    },
+    slack: {
+      integration: "slack",
+      async notifyApprovalRequired() {
+        return {
+          data: {
+            error: "slack_unavailable",
+          },
+          ok: false,
+        };
+      },
+    },
   };
 }
