@@ -19,7 +19,10 @@ export interface AgentGateActionRequest {
   target?: string;
 }
 
-export type GitHubPullRequestInput = GitHubCreatePullRequestInput | GitHubUpdatePullRequestInput;
+export type GitHubPullRequestInput =
+  | GitHubCreatePullRequestInput
+  | GitHubMergePullRequestInput
+  | GitHubUpdatePullRequestInput;
 
 export interface GitHubCreatePullRequestInput {
   base: string;
@@ -28,6 +31,14 @@ export interface GitHubCreatePullRequestInput {
   head: string;
   maintainerCanModify?: boolean;
   title: string;
+}
+
+export interface GitHubMergePullRequestInput {
+  commitMessage?: string;
+  commitTitle?: string;
+  expectedHeadSha: string;
+  mergeMethod?: "merge" | "squash" | "rebase";
+  pullNumber: number;
 }
 
 export interface GitHubUpdatePullRequestInput {

@@ -21,6 +21,20 @@ interface GitHubCreatePullRequestResponse {
   number?: number;
 }
 
+interface GitHubMergePullRequestInput {
+  commitMessage?: string;
+  commitTitle?: string;
+  expectedHeadSha: string;
+  mergeMethod?: "merge" | "squash" | "rebase";
+  pullNumber: number;
+}
+
+interface GitHubMergePullRequestResponse {
+  merged?: boolean;
+  message?: string;
+  sha?: string;
+}
+
 interface GitHubUpdatePullRequestInput {
   base?: string;
   body?: string;
@@ -52,6 +66,10 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
 
     if (request.action === "pull_requests.update") {
       return this.updatePullRequest(request);
+    }
+
+    if (request.action === "pull_requests.merge") {
+      return this.mergePullRequest(request);
     }
 
     return {
@@ -135,6 +153,44 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
 
     return toPullRequestResult(response, payload, "github_update_pull_request_failed");
   }
+
+  private async mergePullRequest(request: ActionRequest): Promise<IntegrationResult> {
+    const repository = readString(request.input?.repository);
+    const pullRequestInput = readMergePullRequestInput(request.input?.github);
+
+    if (!repository) {
+      return {
+        data: {
+          error: "missing_github_pull_request_input",
+          fields: ["repository"],
+        },
+        ok: false,
+      };
+    }
+
+    if (!pullRequestInput.ok) {
+      return {
+        data: {
+          error: "missing_github_pull_request_input",
+          fields: pullRequestInput.fields,
+        },
+        ok: false,
+      };
+    }
+
+    const token = await this.tokenProvider();
+    const response = await this.fetcher(
+      `${this.apiBaseUrl}/repos/${repository}/pulls/${pullRequestInput.value.pullNumber}/merge`,
+      {
+        body: JSON.stringify(toGitHubMergePullRequestBody(pullRequestInput.value)),
+        headers: createGitHubHeaders(token),
+        method: "PUT",
+      },
+    );
+    const payload = (await response.json()) as GitHubMergePullRequestResponse;
+
+    return toMergeResult(response, payload);
+  }
 }
 
 function toPullRequestResult(
@@ -161,6 +217,30 @@ function toPullRequestResult(
   };
 }
 
+function toMergeResult(
+  response: Response,
+  payload: GitHubMergePullRequestResponse,
+): IntegrationResult {
+  if (!response.ok || payload.merged !== true || !payload.sha) {
+    return {
+      data: {
+        error: "github_merge_pull_request_failed",
+      },
+      ok: false,
+    };
+  }
+
+  return {
+    data: {
+      merged: payload.merged,
+      message: payload.message,
+      sha: payload.sha,
+    },
+    externalRequestId: payload.sha,
+    ok: true,
+  };
+}
+
 function createGitHubHeaders(token: string): HeadersInit {
   return {
     accept: "application/vnd.github+json",
@@ -183,6 +263,15 @@ function toGitHubCreatePullRequestBody(input: GitHubCreatePullRequestInput) {
   };
 }
 
+function toGitHubMergePullRequestBody(input: GitHubMergePullRequestInput) {
+  return {
+    ...(input.commitMessage ? { commit_message: input.commitMessage } : {}),
+    ...(input.commitTitle ? { commit_title: input.commitTitle } : {}),
+    ...(input.mergeMethod ? { merge_method: input.mergeMethod } : {}),
+    sha: input.expectedHeadSha,
+  };
+}
+
 function toGitHubUpdatePullRequestBody(input: GitHubUpdatePullRequestInput) {
   return {
     ...(input.base ? { base: input.base } : {}),
@@ -192,6 +281,53 @@ function toGitHubUpdatePullRequestBody(input: GitHubUpdatePullRequestInput) {
       : {}),
     ...(input.state ? { state: input.state } : {}),
     ...(input.title ? { title: input.title } : {}),
+  };
+}
+
+function readMergePullRequestInput(value: unknown):
+  | { ok: true; value: GitHubMergePullRequestInput }
+  | { fields: string[]; ok: false } {
+  if (!isRecord(value)) {
+    return {
+      fields: ["pullNumber", "expectedHeadSha"],
+      ok: false,
+    };
+  }
+
+  const pullNumber = readPositiveInteger(value.pullNumber);
+  const expectedHeadSha = readString(value.expectedHeadSha);
+  const commitMessage =
+    typeof value.commitMessage === "string" ? value.commitMessage.trim() : undefined;
+  const commitTitle = readString(value.commitTitle);
+  const mergeMethod = readMergeMethod(value.mergeMethod);
+  const fields = [
+    ...(pullNumber ? [] : ["pullNumber"]),
+    ...(expectedHeadSha ? [] : ["expectedHeadSha"]),
+  ];
+
+  if (!pullNumber || !expectedHeadSha) {
+    return {
+      fields,
+      ok: false,
+    };
+  }
+
+  if (value.mergeMethod !== undefined && !mergeMethod) {
+    return {
+      fields: ["mergeMethod"],
+      ok: false,
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...(commitMessage ? { commitMessage } : {}),
+      ...(commitTitle ? { commitTitle } : {}),
+      expectedHeadSha,
+      ...(mergeMethod ? { mergeMethod } : {}),
+      pullNumber,
+    },
   };
 }
 
@@ -298,6 +434,10 @@ function readPositiveInteger(value: unknown): number | undefined {
 
 function readPullRequestState(value: unknown): "open" | "closed" | undefined {
   return value === "open" || value === "closed" ? value : undefined;
+}
+
+function readMergeMethod(value: unknown): "merge" | "squash" | "rebase" | undefined {
+  return value === "merge" || value === "squash" || value === "rebase" ? value : undefined;
 }
 
 function readString(value: unknown): string | undefined {
