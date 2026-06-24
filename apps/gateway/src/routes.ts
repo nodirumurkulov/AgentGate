@@ -11,7 +11,7 @@ import {
   type PolicyDocument,
 } from "@agentgate/core";
 import type { FastifyInstance } from "fastify";
-import type { GatewayAdapters } from "./adapters/fixtureAdapters";
+import type { GatewayAdapters } from "./adapters/types";
 import { verifySlackSignature } from "./slackSignature";
 import type { MemoryStore } from "./stores/memoryStore";
 
@@ -68,6 +68,12 @@ export function registerRoutes(
   adapters: GatewayAdapters,
   slackSigningSecret: string,
 ): void {
+  server.addContentTypeParser(
+    "application/x-www-form-urlencoded",
+    { parseAs: "string" },
+    (_request, body, done) => done(null, body),
+  );
+
   server.get("/health", async () => ({
     service: "agentgate-gateway",
     status: "ok",
@@ -96,9 +102,18 @@ export function registerRoutes(
 
     if (result.decision.outcome === "approval_required") {
       const approval = createPendingApproval(request.body, store, result.risk);
+      const notification = await adapters.slack.notifyApprovalRequired(approval);
+
+      if (!notification.ok) {
+        return reply.code(502).send({
+          auditEventId: result.auditEvent.id,
+          decision: result.decision,
+          notification,
+          risk: result.risk,
+        });
+      }
 
       store.appendApproval(approval);
-      await adapters.slack.notifyApprovalRequired(approval);
 
       return reply.code(202).send({
         approval,
@@ -143,6 +158,45 @@ export function registerRoutes(
     }
 
     const callback = parseSlackApprovalCallback(request.body);
+
+    if (!callback) {
+      return reply.code(400).send({ error: "invalid_slack_payload" });
+    }
+
+    const approval = store.findApproval(callback.approvalId);
+
+    if (!approval) {
+      return reply.code(404).send({ error: "approval_not_found" });
+    }
+
+    const updatedApproval = transitionApprovalFromCallback(approval, callback);
+
+    store.replaceApproval(updatedApproval);
+
+    return { approval: updatedApproval };
+  });
+
+  server.post<{ Body: string }>("/v1/slack/interactions", async (request, reply) => {
+    const signature = readHeader(request.headers["x-slack-signature"]);
+    const timestamp = readHeader(request.headers["x-slack-request-timestamp"]);
+    const bodyText = typeof request.body === "string" ? request.body : "";
+
+    if (!signature || !timestamp || !slackSigningSecret) {
+      return reply.code(401).send({ error: "invalid_slack_signature" });
+    }
+
+    const signatureValid = verifySlackSignature({
+      body: bodyText,
+      signature,
+      signingSecret: slackSigningSecret,
+      timestamp,
+    });
+
+    if (!signatureValid) {
+      return reply.code(401).send({ error: "invalid_slack_signature" });
+    }
+
+    const callback = parseSlackInteractionCallback(bodyText);
 
     if (!callback) {
       return reply.code(400).send({ error: "invalid_slack_payload" });
@@ -296,4 +350,56 @@ function readRequiredString(value: unknown): string | undefined {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object";
+}
+
+function parseSlackInteractionCallback(bodyText: string): SlackApprovalCallbackBody | undefined {
+  const encodedPayload = new URLSearchParams(bodyText).get("payload");
+
+  if (!encodedPayload) {
+    return undefined;
+  }
+
+  const payload = parseJsonRecord(encodedPayload);
+  const user = isRecord(payload?.user) ? payload.user : undefined;
+  const action = Array.isArray(payload?.actions) ? payload.actions[0] : undefined;
+
+  if (!isRecord(action)) {
+    return undefined;
+  }
+
+  const approvalId = readRequiredString(action.value);
+  const decidedBy = readRequiredString(user?.id);
+  const actionId = action.action_id;
+
+  if (!approvalId || !decidedBy) {
+    return undefined;
+  }
+
+  if (actionId === "agentgate.approve") {
+    return {
+      approvalId,
+      decidedBy,
+      decision: "approve",
+    };
+  }
+
+  if (actionId === "agentgate.deny") {
+    return {
+      approvalId,
+      decidedBy,
+      decision: "deny",
+    };
+  }
+
+  return undefined;
+}
+
+function parseJsonRecord(text: string): Record<string, unknown> | undefined {
+  try {
+    const value = JSON.parse(text) as unknown;
+
+    return isRecord(value) ? value : undefined;
+  } catch {
+    return undefined;
+  }
 }
