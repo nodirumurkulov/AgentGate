@@ -2,6 +2,7 @@ import { createHmac } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { ApprovalRecord } from "@agentgate/core";
 import { describe, expect, it } from "vitest";
 import type { GatewayAdapters } from "./adapters/types";
 import { createGatewayApp } from "./app";
@@ -369,6 +370,7 @@ describe("gateway app", () => {
         outcome: "approval_required",
       },
     });
+    expect(response.json().approval.callbackToken).toBeUndefined();
     expect(response.json().execution).toBeUndefined();
   });
 
@@ -452,6 +454,7 @@ describe("gateway app", () => {
       id: approval.id,
       status: "approved",
     });
+    expect(response.json().approval.callbackToken).toBeUndefined();
   });
 
   it("executes the stored action after a signed Slack approval", async () => {
@@ -591,13 +594,18 @@ describe("gateway app", () => {
   });
 
   it("approves a pending approval from a signed Slack interaction payload", async () => {
-    const app = createGatewayApp({ slackSigningSecret });
+    const slackApprovals: ApprovalRecord[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters([], slackApprovals),
+      slackSigningSecret,
+    });
     const approval = await createPendingApproval(app);
+    const callbackToken = requireCallbackToken(slackApprovals);
     const body = createSlackInteractionBody({
       actions: [
         {
           action_id: "agentgate.approve",
-          value: `${approval.id}:${approval.callbackToken}`,
+          value: `${approval.id}:${callbackToken}`,
         },
       ],
       user: {
@@ -621,6 +629,7 @@ describe("gateway app", () => {
       id: approval.id,
       status: "approved",
     });
+    expect(response.json().approval.callbackToken).toBeUndefined();
   });
 
   it("rejects Slack interaction callbacks with invalid approval tokens", async () => {
@@ -654,16 +663,18 @@ describe("gateway app", () => {
 
   it("rejects replayed Slack approval callbacks without executing twice", async () => {
     const githubRequests: unknown[] = [];
+    const slackApprovals: ApprovalRecord[] = [];
     const app = createGatewayApp({
-      adapters: createRecordingAdapters(githubRequests),
+      adapters: createRecordingAdapters(githubRequests, slackApprovals),
       slackSigningSecret,
     });
     const approval = await createPendingApproval(app);
+    const callbackToken = requireCallbackToken(slackApprovals);
     const body = createSlackInteractionBody({
       actions: [
         {
           action_id: "agentgate.approve",
-          value: `${approval.id}:${approval.callbackToken}`,
+          value: `${approval.id}:${callbackToken}`,
         },
       ],
       user: {
@@ -697,6 +708,7 @@ describe("gateway app", () => {
         status: "approved",
       },
     });
+    expect(replayResponse.json().approval.callbackToken).toBeUndefined();
     expect(githubRequests).toHaveLength(1);
   });
 
@@ -867,6 +879,16 @@ function createStorePath(): string {
   return join(mkdtempSync(join(tmpdir(), "agentgate-app-store-")), "store.json");
 }
 
+function requireCallbackToken(approvals: ApprovalRecord[]): string {
+  const token = approvals[0]?.callbackToken;
+
+  if (!token) {
+    throw new Error("Expected Slack approval callback token to be captured.");
+  }
+
+  return token;
+}
+
 function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters {
   return {
     github: {
@@ -896,7 +918,10 @@ function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters
   };
 }
 
-function createRecordingAdapters(githubRequests: unknown[]): GatewayAdapters {
+function createRecordingAdapters(
+  githubRequests: unknown[],
+  slackApprovals: ApprovalRecord[] = [],
+): GatewayAdapters {
   return {
     github: {
       integration: "github",
@@ -918,7 +943,9 @@ function createRecordingAdapters(githubRequests: unknown[]): GatewayAdapters {
     },
     slack: {
       integration: "slack",
-      async notifyApprovalRequired() {
+      async notifyApprovalRequired(approval) {
+        slackApprovals.push(approval);
+
         return {
           data: {},
           ok: true,
