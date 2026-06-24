@@ -139,6 +139,72 @@ describe("gateway app", () => {
     });
   });
 
+  it("passes GitHub create pull request input to the GitHub adapter", async () => {
+    const githubInputs: unknown[] = [];
+    const app = createGatewayApp({
+      adapters: createCapturingGitHubAdapters(githubInputs),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "pull_requests.create",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        github: {
+          base: "main",
+          draft: true,
+          head: "agentgate-smoke",
+          title: "AgentGate smoke test",
+        },
+        integration: "github",
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(githubInputs).toEqual([
+      {
+        base: "main",
+        draft: true,
+        head: "agentgate-smoke",
+        title: "AgentGate smoke test",
+      },
+    ]);
+  });
+
+  it("fails closed when allowed GitHub execution fails", async () => {
+    const app = createGatewayApp({
+      adapters: createFailingGitHubAdapters(),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "pull_requests.create",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        integration: "github",
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({
+      decision: {
+        outcome: "allow",
+      },
+      execution: {
+        data: {
+          error: "github_create_pull_request_failed",
+        },
+        ok: false,
+      },
+    });
+  });
+
   it("creates a pending approval for high-risk pull request actions", async () => {
     const app = createGatewayApp();
 
@@ -481,6 +547,58 @@ function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters
             error: "slack_unavailable",
           },
           ok: false,
+        };
+      },
+    },
+  };
+}
+
+function createCapturingGitHubAdapters(githubInputs: unknown[]): GatewayAdapters {
+  return {
+    github: {
+      integration: "github",
+      async execute(request) {
+        githubInputs.push(request.input?.github);
+
+        return {
+          data: {
+            action: request.action,
+          },
+          ok: true,
+        };
+      },
+    },
+    slack: {
+      integration: "slack",
+      async notifyApprovalRequired() {
+        return {
+          data: {},
+          ok: true,
+        };
+      },
+    },
+  };
+}
+
+function createFailingGitHubAdapters(): GatewayAdapters {
+  return {
+    github: {
+      integration: "github",
+      async execute() {
+        return {
+          data: {
+            error: "github_create_pull_request_failed",
+          },
+          ok: false,
+        };
+      },
+    },
+    slack: {
+      integration: "slack",
+      async notifyApprovalRequired() {
+        return {
+          data: {},
+          ok: true,
         };
       },
     },

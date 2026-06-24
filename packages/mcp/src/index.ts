@@ -12,6 +12,7 @@ export interface GuardedMcpToolArguments {
   changedFiles?: string[];
   deletedFiles?: string[];
   diffText?: string;
+  github?: AgentGateActionRequest["github"];
   repository: string;
 }
 
@@ -70,6 +71,7 @@ function createActionRequest(
     ...(args.changedFiles ? { changedFiles: args.changedFiles } : {}),
     ...(args.deletedFiles ? { deletedFiles: args.deletedFiles } : {}),
     ...(args.diffText ? { diffText: args.diffText } : {}),
+    ...(args.github ? { github: args.github } : {}),
     integration: tool.integration,
     repository: args.repository,
   };

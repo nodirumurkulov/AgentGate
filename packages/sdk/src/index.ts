@@ -11,11 +11,21 @@ export interface AgentGateActionRequest {
   changedFiles?: string[];
   deletedFiles?: string[];
   diffText?: string;
+  github?: GitHubPullRequestInput;
   input?: ActionRequest["input"];
   integration: string;
   repository?: string;
   sourceTrust?: ActionRequest["sourceTrust"];
   target?: string;
+}
+
+export interface GitHubPullRequestInput {
+  base: string;
+  body?: string;
+  draft?: boolean;
+  head: string;
+  maintainerCanModify?: boolean;
+  title: string;
 }
 
 export interface AgentGateAuthorizeResponse {
