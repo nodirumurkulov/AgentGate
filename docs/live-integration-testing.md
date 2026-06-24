@@ -48,6 +48,7 @@ Export these values into the gateway process with your shell or secret manager, 
 ```bash
 export AGENTGATE_ADAPTER_MODE=real
 export AGENTGATE_PUBLIC_URL=https://<your-public-tunnel>
+export AGENTGATE_STORE_PATH=./data/agentgate-store.json
 export GITHUB_APP_ID=<github-app-id>
 export GITHUB_APP_PRIVATE_KEY_PATH=.secrets/github-app.private-key.pem
 export GITHUB_INSTALLATION_ID=<github-installation-id>
