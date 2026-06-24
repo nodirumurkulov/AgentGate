@@ -53,12 +53,21 @@ export GITHUB_APP_ID=<github-app-id>
 export GITHUB_APP_PRIVATE_KEY_PATH=.secrets/github-app.private-key.pem
 export GITHUB_INSTALLATION_ID=<github-installation-id>
 export GITHUB_API_BASE_URL=https://api.github.com
+export GITHUB_WEBHOOK_SECRET=<github-webhook-secret>
 export SLACK_BOT_TOKEN=<slack-bot-token>
 export SLACK_SIGNING_SECRET=<slack-signing-secret>
 export SLACK_APPROVAL_CHANNEL_ID=<slack-channel-id>
 
 npm run dev:gateway
 ```
+
+If you enable GitHub webhooks for audit correlation, set the webhook URL to:
+
+```text
+https://<your-public-tunnel>/v1/github/webhooks
+```
+
+Use the same secret value as `GITHUB_WEBHOOK_SECRET`.
 
 ## Sandbox Repository Prep
 

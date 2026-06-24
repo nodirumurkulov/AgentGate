@@ -25,11 +25,33 @@ export function createGatewayApp(options: GatewayAppOptions = {}) {
     });
   const store = options.store ?? createGatewayStore(options.env ?? process.env);
 
+  server.removeContentTypeParser("application/json");
+  server.addContentTypeParser(
+    "application/json",
+    { parseAs: "string" },
+    (request, body, done) => {
+      const bodyText = Buffer.isBuffer(body) ? body.toString("utf8") : body;
+      (request as { rawBody?: string }).rawBody = bodyText;
+
+      try {
+        done(null, bodyText ? JSON.parse(bodyText) : null);
+      } catch (error) {
+        done(error as Error, undefined);
+      }
+    },
+  );
+
   void server.register(cors, {
     origin: true,
   });
 
-  registerRoutes(server, store, adapters, options.slackSigningSecret ?? options.env?.SLACK_SIGNING_SECRET ?? "");
+  registerRoutes(
+    server,
+    store,
+    adapters,
+    options.slackSigningSecret ?? options.env?.SLACK_SIGNING_SECRET ?? "",
+    options.env?.GITHUB_WEBHOOK_SECRET ?? process.env.GITHUB_WEBHOOK_SECRET ?? "",
+  );
 
   return server;
 }

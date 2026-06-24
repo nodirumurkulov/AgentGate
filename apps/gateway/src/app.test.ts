@@ -7,6 +7,7 @@ import type { GatewayAdapters } from "./adapters/types";
 import { createGatewayApp } from "./app";
 
 const slackSigningSecret = "test_slack_signing_secret";
+const githubWebhookSecret = "test_github_webhook_secret";
 
 describe("gateway app", () => {
   it("allows low-risk pull request creation", async () => {
@@ -111,6 +112,95 @@ describe("gateway app", () => {
       decision: "approval_required",
       riskLevel: "high",
     });
+  });
+
+  it("records signed GitHub pull request webhook deliveries as audit events", async () => {
+    const app = createGatewayApp({
+      env: {
+        GITHUB_WEBHOOK_SECRET: githubWebhookSecret,
+      },
+    });
+    const bodyText = `{
+  "action": "opened",
+  "repository": {
+    "full_name": "nodirumurkulov/AgentGate"
+  },
+  "pull_request": {
+    "number": 12
+  }
+}`;
+
+    const response = await app.inject({
+      headers: {
+        ...signedGitHubHeaders(bodyText),
+        "content-type": "application/json",
+        "x-github-delivery": "delivery_1",
+        "x-github-event": "pull_request",
+      },
+      method: "POST",
+      payload: bodyText,
+      url: "/v1/github/webhooks",
+    });
+
+    expect(response.statusCode).toBe(202);
+    expect(response.json()).toMatchObject({
+      auditEventId: "audit_1",
+      ok: true,
+    });
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+
+    expect(auditResponse.json().events).toHaveLength(1);
+    expect(auditResponse.json().events[0]).toMatchObject({
+      action: "github.webhook.pull_request.opened",
+      decision: "allow",
+      payload: {
+        deliveryId: "delivery_1",
+        event: "pull_request",
+        pullRequestNumber: 12,
+      },
+      repository: "nodirumurkulov/AgentGate",
+      requestId: "github_delivery_1",
+      riskLevel: "low",
+    });
+  });
+
+  it("rejects GitHub webhook deliveries with invalid signatures", async () => {
+    const app = createGatewayApp({
+      env: {
+        GITHUB_WEBHOOK_SECRET: githubWebhookSecret,
+      },
+    });
+    const bodyText = JSON.stringify({
+      action: "opened",
+      repository: {
+        full_name: "nodirumurkulov/AgentGate",
+      },
+    });
+
+    const response = await app.inject({
+      headers: {
+        "content-type": "application/json",
+        "x-github-delivery": "delivery_1",
+        "x-github-event": "pull_request",
+        "x-hub-signature-256": "sha256=invalid",
+      },
+      method: "POST",
+      payload: bodyText,
+      url: "/v1/github/webhooks",
+    });
+
+    expect(response.statusCode).toBe(401);
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+
+    expect(auditResponse.json().events).toEqual([]);
   });
 
   it("executes allowed low-risk pull request actions", async () => {
@@ -545,6 +635,14 @@ function signedSlackRawBodyHeaders(body: string, timestamp = String(Math.floor(D
     "x-slack-request-timestamp": timestamp,
     "x-slack-signature": `v0=${createHmac("sha256", slackSigningSecret)
       .update(`v0:${timestamp}:${body}`)
+      .digest("hex")}`,
+  };
+}
+
+function signedGitHubHeaders(body: string) {
+  return {
+    "x-hub-signature-256": `sha256=${createHmac("sha256", githubWebhookSecret)
+      .update(body)
       .digest("hex")}`,
   };
 }
