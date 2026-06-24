@@ -13,7 +13,7 @@ import {
 import type { FastifyInstance } from "fastify";
 import type { GatewayAdapters } from "./adapters/types";
 import { verifySlackSignature } from "./slackSignature";
-import type { MemoryStore } from "./stores/memoryStore";
+import type { GatewayStore } from "./stores/types";
 
 interface CodeChangeActionBody {
   action: string;
@@ -65,7 +65,7 @@ const policy: PolicyDocument = {
 
 export function registerRoutes(
   server: FastifyInstance,
-  store: MemoryStore,
+  store: GatewayStore,
   adapters: GatewayAdapters,
   slackSigningSecret: string,
 ): void {
@@ -226,7 +226,7 @@ export function registerRoutes(
   });
 }
 
-function authorizeCodeChange(body: CodeChangeActionBody, store: MemoryStore) {
+function authorizeCodeChange(body: CodeChangeActionBody, store: GatewayStore) {
   const risk = classifyCodeChangeRisk(createRiskInput(body));
   const actionRequest = createActionRequest(body, risk.level);
   const decision = evaluateAction(actionRequest, policy);
@@ -264,7 +264,7 @@ function createActionRequest(body: CodeChangeActionBody, riskLevel: string): Act
 
 function appendAuditEvent(
   body: CodeChangeActionBody,
-  store: MemoryStore,
+  store: GatewayStore,
   risk: CodeChangeRisk,
   decision: "allow" | "block" | "approval_required",
 ): AuditEvent {
@@ -291,7 +291,7 @@ function appendAuditEvent(
 
 function createPendingApproval(
   body: CodeChangeActionBody,
-  store: MemoryStore,
+  store: GatewayStore,
   risk: CodeChangeRisk,
 ): ApprovalRecord {
   return {

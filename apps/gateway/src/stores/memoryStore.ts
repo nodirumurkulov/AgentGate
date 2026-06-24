@@ -1,6 +1,7 @@
 import type { ApprovalRecord, AuditEvent } from "@agentgate/core";
+import type { GatewayStore } from "./types";
 
-export class MemoryStore {
+export class MemoryStore implements GatewayStore {
   private readonly approvals: ApprovalRecord[] = [];
   private readonly auditEvents: AuditEvent[] = [];
 

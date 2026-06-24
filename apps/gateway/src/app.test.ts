@@ -1,4 +1,7 @@
 import { createHmac } from "node:crypto";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { GatewayAdapters } from "./adapters/types";
 import { createGatewayApp } from "./app";
@@ -317,6 +320,34 @@ describe("gateway app", () => {
     });
   });
 
+  it("persists pending approvals when a store path is configured", async () => {
+    const env = {
+      AGENTGATE_STORE_PATH: createStorePath(),
+    };
+    const firstApp = createGatewayApp({ env, slackSigningSecret });
+    const approval = await createPendingApproval(firstApp);
+    const secondApp = createGatewayApp({ env, slackSigningSecret });
+    const payload = {
+      approvalId: approval.id,
+      decidedBy: "security-reviewer",
+      decision: "approve",
+    };
+
+    const response = await secondApp.inject({
+      headers: signedSlackHeaders(payload),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().approval).toMatchObject({
+      decidedBy: "security-reviewer",
+      id: approval.id,
+      status: "approved",
+    });
+  });
+
   it("denies a pending approval from a signed Slack callback", async () => {
     const app = createGatewayApp({ slackSigningSecret });
     const approval = await createPendingApproval(app);
@@ -522,6 +553,10 @@ function createSlackInteractionBody(payload: Record<string, unknown>): string {
   return new URLSearchParams({
     payload: JSON.stringify(payload),
   }).toString();
+}
+
+function createStorePath(): string {
+  return join(mkdtempSync(join(tmpdir(), "agentgate-app-store-")), "store.json");
 }
 
 function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters {
