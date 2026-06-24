@@ -121,7 +121,7 @@ export function registerRoutes(
       store.appendApproval(approval);
 
       return reply.code(202).send({
-        approval,
+        approval: toPublicApproval(approval),
         auditEventId: result.auditEvent.id,
         decision: result.decision,
         risk: result.risk,
@@ -230,20 +230,21 @@ export function registerRoutes(
 
     if (approval.status !== "pending") {
       return reply.code(409).send({
-        approval,
+        approval: toPublicApproval(approval),
         error: "approval_already_decided",
       });
     }
 
     const result = await transitionApprovalFromCallback(approval, callback, adapters);
+    const responseBody = toApprovalCallbackResponse(result);
 
     store.replaceApproval(result.approval);
 
     if (result.execution && !result.execution.ok) {
-      return reply.code(502).send(result);
+      return reply.code(502).send(responseBody);
     }
 
-    return result;
+    return responseBody;
   });
 
   server.post<{ Body: string }>("/v1/slack/interactions", async (request, reply) => {
@@ -284,20 +285,21 @@ export function registerRoutes(
 
     if (approval.status !== "pending") {
       return reply.code(409).send({
-        approval,
+        approval: toPublicApproval(approval),
         error: "approval_already_decided",
       });
     }
 
     const result = await transitionApprovalFromCallback(approval, callback, adapters);
+    const responseBody = toApprovalCallbackResponse(result);
 
     store.replaceApproval(result.approval);
 
     if (result.execution && !result.execution.ok) {
-      return reply.code(502).send(result);
+      return reply.code(502).send(responseBody);
     }
 
-    return result;
+    return responseBody;
   });
 }
 
@@ -311,6 +313,12 @@ interface GitHubWebhookAuditInput {
 type ApprovalCallbackResult = {
   approval: ApprovalRecord;
   execution?: Awaited<ReturnType<GatewayAdapters["github"]["execute"]>>;
+};
+
+type PublicApprovalRecord = Omit<ApprovalRecord, "callbackToken">;
+
+type ApprovalCallbackResponse = Omit<ApprovalCallbackResult, "approval"> & {
+  approval: PublicApprovalRecord;
 };
 
 function authorizeCodeChange(body: CodeChangeActionBody, store: GatewayStore) {
@@ -415,6 +423,20 @@ function githubDeliveryWasProcessed(store: GatewayStore, deliveryId: string): bo
 
 function createGitHubDeliveryRequestId(deliveryId: string): string {
   return `github_${deliveryId}`;
+}
+
+function toApprovalCallbackResponse(result: ApprovalCallbackResult): ApprovalCallbackResponse {
+  return {
+    ...result,
+    approval: toPublicApproval(result.approval),
+  };
+}
+
+function toPublicApproval(approval: ApprovalRecord): PublicApprovalRecord {
+  const publicApproval = { ...approval };
+  delete publicApproval.callbackToken;
+
+  return publicApproval;
 }
 
 function createPendingApproval(
