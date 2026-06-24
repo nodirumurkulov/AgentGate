@@ -101,7 +101,7 @@ function createApprovalMessage(channel: string, publicUrl: string, approval: App
               type: "plain_text",
             },
             type: "button",
-            value: approval.id,
+            value: createApprovalCallbackValue(approval),
           },
           {
             action_id: "agentgate.deny",
@@ -111,7 +111,7 @@ function createApprovalMessage(channel: string, publicUrl: string, approval: App
               type: "plain_text",
             },
             type: "button",
-            value: approval.id,
+            value: createApprovalCallbackValue(approval),
           },
         ],
         type: "actions",
@@ -127,4 +127,8 @@ function createApprovalMessage(channel: string, publicUrl: string, approval: App
     channel,
     text: `AgentGate approval required for ${approval.action} in ${approval.repository}.`,
   };
+}
+
+function createApprovalCallbackValue(approval: ApprovalRecord): string {
+  return approval.callbackToken ? `${approval.id}:${approval.callbackToken}` : approval.id;
 }

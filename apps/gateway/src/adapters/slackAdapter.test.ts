@@ -4,6 +4,7 @@ import { SlackApprovalAdapter } from "./slackAdapter";
 
 const approval: ApprovalRecord = {
   action: "pull_requests.update",
+  callbackToken: "callback_token_1",
   id: "approval_1",
   repository: "nodirumurkulov/AgentGate",
   requestedAt: "2026-06-24T00:00:00.000Z",
@@ -52,7 +53,7 @@ describe("SlackApprovalAdapter", () => {
     });
     expect(JSON.stringify(request.body)).toContain("agentgate.approve");
     expect(JSON.stringify(request.body)).toContain("agentgate.deny");
-    expect(JSON.stringify(request.body)).toContain("approval_1");
+    expect(JSON.stringify(request.body)).toContain("approval_1:callback_token_1");
     expect(JSON.stringify(request.body)).toContain("Authentication or authorization code changed.");
     expect(JSON.stringify(request.body)).toContain("https://agentgate.example.test/v1/slack/interactions");
     expect(result).toEqual({

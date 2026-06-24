@@ -10,6 +10,7 @@ import {
   type CodeChangeRisk,
   type PolicyDocument,
 } from "@agentgate/core";
+import { randomUUID } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { GatewayAdapters } from "./adapters/types";
 import { verifyGitHubSignature } from "./githubSignature";
@@ -29,6 +30,7 @@ interface CodeChangeActionBody {
 
 interface SlackApprovalCallbackBody {
   approvalId: string;
+  callbackToken?: string;
   decidedBy: string;
   decision: "approve" | "deny";
   reason?: string;
@@ -218,6 +220,17 @@ export function registerRoutes(
       return reply.code(404).send({ error: "approval_not_found" });
     }
 
+    if (!approvalTokenIsValid(approval, callback)) {
+      return reply.code(401).send({ error: "invalid_approval_token" });
+    }
+
+    if (approval.status !== "pending") {
+      return reply.code(409).send({
+        approval,
+        error: "approval_already_decided",
+      });
+    }
+
     const result = await transitionApprovalFromCallback(approval, callback, adapters);
 
     store.replaceApproval(result.approval);
@@ -259,6 +272,17 @@ export function registerRoutes(
 
     if (!approval) {
       return reply.code(404).send({ error: "approval_not_found" });
+    }
+
+    if (!approvalTokenIsValid(approval, callback)) {
+      return reply.code(401).send({ error: "invalid_approval_token" });
+    }
+
+    if (approval.status !== "pending") {
+      return reply.code(409).send({
+        approval,
+        error: "approval_already_decided",
+      });
     }
 
     const result = await transitionApprovalFromCallback(approval, callback, adapters);
@@ -388,6 +412,7 @@ function createPendingApproval(
   return {
     action: body.action,
     actionRequest,
+    callbackToken: randomUUID(),
     id: `approval_${store.listApprovals().length + 1}`,
     repository: body.repository,
     requestedAt: new Date().toISOString(),
@@ -395,6 +420,17 @@ function createPendingApproval(
     riskReasons: risk.reasons,
     status: "pending",
   };
+}
+
+function approvalTokenIsValid(
+  approval: ApprovalRecord,
+  callback: SlackApprovalCallbackBody,
+): boolean {
+  if (!callback.callbackToken) {
+    return true;
+  }
+
+  return approval.callbackToken === callback.callbackToken;
 }
 
 function transitionApprovalFromCallback(
@@ -504,17 +540,18 @@ function parseSlackInteractionCallback(bodyText: string): SlackApprovalCallbackB
     return undefined;
   }
 
-  const approvalId = readRequiredString(action.value);
+  const approvalValue = parseApprovalCallbackValue(action.value);
   const decidedBy = readRequiredString(user?.id);
   const actionId = action.action_id;
 
-  if (!approvalId || !decidedBy) {
+  if (!approvalValue || !decidedBy) {
     return undefined;
   }
 
   if (actionId === "agentgate.approve") {
     return {
-      approvalId,
+      approvalId: approvalValue.approvalId,
+      callbackToken: approvalValue.callbackToken,
       decidedBy,
       decision: "approve",
     };
@@ -522,13 +559,35 @@ function parseSlackInteractionCallback(bodyText: string): SlackApprovalCallbackB
 
   if (actionId === "agentgate.deny") {
     return {
-      approvalId,
+      approvalId: approvalValue.approvalId,
+      callbackToken: approvalValue.callbackToken,
       decidedBy,
       decision: "deny",
     };
   }
 
   return undefined;
+}
+
+function parseApprovalCallbackValue(
+  value: unknown,
+): { approvalId: string; callbackToken: string } | undefined {
+  const text = readRequiredString(value);
+
+  if (!text) {
+    return undefined;
+  }
+
+  const separatorIndex = text.indexOf(":");
+
+  if (separatorIndex <= 0 || separatorIndex === text.length - 1) {
+    return undefined;
+  }
+
+  return {
+    approvalId: text.slice(0, separatorIndex),
+    callbackToken: text.slice(separatorIndex + 1),
+  };
 }
 
 function parseJsonRecord(text: string): Record<string, unknown> | undefined {
