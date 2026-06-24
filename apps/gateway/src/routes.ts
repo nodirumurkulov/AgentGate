@@ -21,6 +21,7 @@ interface CodeChangeActionBody {
   changedFiles?: string[];
   deletedFiles?: string[];
   diffText?: string;
+  github?: unknown;
   integration: string;
   repository: string;
 }
@@ -124,6 +125,15 @@ export function registerRoutes(
     }
 
     const execution = await adapters.github.execute(result.actionRequest);
+
+    if (!execution.ok) {
+      return reply.code(502).send({
+        auditEventId: result.auditEvent.id,
+        decision: result.decision,
+        execution,
+        risk: result.risk,
+      });
+    }
 
     return {
       auditEventId: result.auditEvent.id,
@@ -244,6 +254,7 @@ function createActionRequest(body: CodeChangeActionBody, riskLevel: string): Act
     input: {
       changedFiles: body.changedFiles ?? [],
       deletedFiles: body.deletedFiles ?? [],
+      ...(body.github ? { github: body.github } : {}),
       repository: body.repository,
     },
     integration: body.integration,

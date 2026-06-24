@@ -52,6 +52,53 @@ describe("callGuardedTool", () => {
     ]);
   });
 
+  it("forwards GitHub create pull request input", async () => {
+    const calls: unknown[] = [];
+    const client = {
+      async execute(request: unknown) {
+        calls.push(request);
+
+        return {
+          decision: {
+            outcome: "allow",
+          },
+        };
+      },
+    };
+
+    await callGuardedTool(
+      "agentgate.github.create_pull_request",
+      {
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        github: {
+          base: "main",
+          draft: true,
+          head: "agentgate-smoke",
+          title: "AgentGate smoke test",
+        },
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+      client,
+    );
+
+    expect(calls).toEqual([
+      {
+        action: "pull_requests.create",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        github: {
+          base: "main",
+          draft: true,
+          head: "agentgate-smoke",
+          title: "AgentGate smoke test",
+        },
+        integration: "github",
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+    ]);
+  });
+
   it("throws for unknown tool names", async () => {
     await expect(
       callGuardedTool(

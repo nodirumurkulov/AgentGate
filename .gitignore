@@ -8,10 +8,10 @@ coverage/
 .env
 .env.*
 !.env.example
+.secrets/
 
 data/
 *.db
 *.db-journal
 
 .DS_Store
-
