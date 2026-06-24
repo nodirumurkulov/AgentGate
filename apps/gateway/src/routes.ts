@@ -218,11 +218,15 @@ export function registerRoutes(
       return reply.code(404).send({ error: "approval_not_found" });
     }
 
-    const updatedApproval = transitionApprovalFromCallback(approval, callback);
+    const result = await transitionApprovalFromCallback(approval, callback, adapters);
 
-    store.replaceApproval(updatedApproval);
+    store.replaceApproval(result.approval);
 
-    return { approval: updatedApproval };
+    if (result.execution && !result.execution.ok) {
+      return reply.code(502).send(result);
+    }
+
+    return result;
   });
 
   server.post<{ Body: string }>("/v1/slack/interactions", async (request, reply) => {
@@ -257,11 +261,15 @@ export function registerRoutes(
       return reply.code(404).send({ error: "approval_not_found" });
     }
 
-    const updatedApproval = transitionApprovalFromCallback(approval, callback);
+    const result = await transitionApprovalFromCallback(approval, callback, adapters);
 
-    store.replaceApproval(updatedApproval);
+    store.replaceApproval(result.approval);
 
-    return { approval: updatedApproval };
+    if (result.execution && !result.execution.ok) {
+      return reply.code(502).send(result);
+    }
+
+    return result;
   });
 }
 
@@ -271,6 +279,11 @@ interface GitHubWebhookAuditInput {
   payload: Record<string, unknown>;
   store: GatewayStore;
 }
+
+type ApprovalCallbackResult = {
+  approval: ApprovalRecord;
+  execution?: Awaited<ReturnType<GatewayAdapters["github"]["execute"]>>;
+};
 
 function authorizeCodeChange(body: CodeChangeActionBody, store: GatewayStore) {
   const risk = classifyCodeChangeRisk(createRiskInput(body));
@@ -370,8 +383,11 @@ function createPendingApproval(
   store: GatewayStore,
   risk: CodeChangeRisk,
 ): ApprovalRecord {
+  const actionRequest = createActionRequest(body, risk.level);
+
   return {
     action: body.action,
+    actionRequest,
     id: `approval_${store.listApprovals().length + 1}`,
     repository: body.repository,
     requestedAt: new Date().toISOString(),
@@ -384,7 +400,8 @@ function createPendingApproval(
 function transitionApprovalFromCallback(
   approval: ApprovalRecord,
   body: SlackApprovalCallbackBody,
-): ApprovalRecord {
+  adapters: GatewayAdapters,
+): Promise<ApprovalCallbackResult> {
   const input = {
     decidedAt: new Date().toISOString(),
     decidedBy: body.decidedBy,
@@ -392,10 +409,26 @@ function transitionApprovalFromCallback(
   };
 
   if (body.decision === "approve") {
-    return approveApproval(approval, input);
+    return executeApprovedAction(approveApproval(approval, input), adapters);
   }
 
-  return denyApproval(approval, input);
+  return Promise.resolve({ approval: denyApproval(approval, input) });
+}
+
+async function executeApprovedAction(
+  approval: ApprovalRecord,
+  adapters: GatewayAdapters,
+): Promise<ApprovalCallbackResult> {
+  if (!approval.actionRequest) {
+    return { approval };
+  }
+
+  const execution = await adapters.github.execute(approval.actionRequest);
+
+  return {
+    approval,
+    execution,
+  };
 }
 
 function readHeader(header: string | string[] | undefined): string | undefined {

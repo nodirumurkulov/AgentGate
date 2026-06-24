@@ -410,6 +410,59 @@ describe("gateway app", () => {
     });
   });
 
+  it("executes the stored action after a signed Slack approval", async () => {
+    const githubRequests: unknown[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests),
+      slackSigningSecret,
+    });
+    const approval = await createPendingApproval(app, {
+      github: {
+        pullNumber: 7,
+        title: "Approved auth update",
+      },
+    });
+    const payload = {
+      approvalId: approval.id,
+      decidedBy: "security-reviewer",
+      decision: "approve",
+    };
+
+    const response = await app.inject({
+      headers: signedSlackHeaders(payload),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      approval: {
+        id: approval.id,
+        status: "approved",
+      },
+      execution: {
+        ok: true,
+      },
+    });
+    expect(githubRequests).toEqual([
+      {
+        action: "pull_requests.update",
+        input: {
+          changedFiles: ["src/auth/session.ts"],
+          deletedFiles: [],
+          github: {
+            pullNumber: 7,
+            title: "Approved auth update",
+          },
+          repository: "nodirumurkulov/AgentGate",
+        },
+        integration: "github",
+        target: "risk:high",
+      },
+    ]);
+  });
+
   it("persists pending approvals when a store path is configured", async () => {
     const env = {
       AGENTGATE_STORE_PATH: createStorePath(),
@@ -461,6 +514,36 @@ describe("gateway app", () => {
       id: approval.id,
       status: "denied",
     });
+  });
+
+  it("does not execute the stored action after a signed Slack denial", async () => {
+    const githubRequests: unknown[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests),
+      slackSigningSecret,
+    });
+    const approval = await createPendingApproval(app);
+    const payload = {
+      approvalId: approval.id,
+      decidedBy: "security-reviewer",
+      decision: "deny",
+      reason: "Needs owner review.",
+    };
+
+    const response = await app.inject({
+      headers: signedSlackHeaders(payload),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().approval).toMatchObject({
+      id: approval.id,
+      status: "denied",
+    });
+    expect(response.json().execution).toBeUndefined();
+    expect(githubRequests).toEqual([]);
   });
 
   it("approves a pending approval from a signed Slack interaction payload", async () => {
@@ -600,13 +683,19 @@ describe("gateway app", () => {
   });
 });
 
-async function createPendingApproval(app: ReturnType<typeof createGatewayApp>) {
+async function createPendingApproval(
+  app: ReturnType<typeof createGatewayApp>,
+  overrides: Partial<{
+    github: Record<string, unknown>;
+  }> = {},
+) {
   const response = await app.inject({
     method: "POST",
     payload: {
       action: "pull_requests.update",
       agentId: "coding-agent",
       changedFiles: ["src/auth/session.ts"],
+      ...(overrides.github ? { github: overrides.github } : {}),
       integration: "github",
       repository: "nodirumurkulov/AgentGate",
     },
@@ -680,6 +769,38 @@ function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters
             error: "slack_unavailable",
           },
           ok: false,
+        };
+      },
+    },
+  };
+}
+
+function createRecordingAdapters(githubRequests: unknown[]): GatewayAdapters {
+  return {
+    github: {
+      integration: "github",
+      async execute(request) {
+        githubRequests.push({
+          action: request.action,
+          input: request.input,
+          integration: request.integration,
+          target: request.target,
+        });
+
+        return {
+          data: {
+            action: request.action,
+          },
+          ok: true,
+        };
+      },
+    },
+    slack: {
+      integration: "slack",
+      async notifyApprovalRequired() {
+        return {
+          data: {},
+          ok: true,
         };
       },
     },
