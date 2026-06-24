@@ -168,6 +168,50 @@ describe("gateway app", () => {
     });
   });
 
+  it("rejects duplicate GitHub webhook deliveries without duplicating audit events", async () => {
+    const app = createGatewayApp({
+      env: {
+        GITHUB_WEBHOOK_SECRET: githubWebhookSecret,
+      },
+    });
+    const bodyText = JSON.stringify({
+      action: "opened",
+      pull_request: {
+        number: 12,
+      },
+      repository: {
+        full_name: "nodirumurkulov/AgentGate",
+      },
+    });
+    const request = {
+      headers: {
+        ...signedGitHubHeaders(bodyText),
+        "content-type": "application/json",
+        "x-github-delivery": "delivery_1",
+        "x-github-event": "pull_request",
+      },
+      method: "POST" as const,
+      payload: bodyText,
+      url: "/v1/github/webhooks",
+    };
+
+    const firstResponse = await app.inject(request);
+    const duplicateResponse = await app.inject(request);
+
+    expect(firstResponse.statusCode).toBe(202);
+    expect(duplicateResponse.statusCode).toBe(409);
+    expect(duplicateResponse.json()).toEqual({
+      error: "github_delivery_already_processed",
+    });
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+
+    expect(auditResponse.json().events).toHaveLength(1);
+  });
+
   it("rejects GitHub webhook deliveries with invalid signatures", async () => {
     const app = createGatewayApp({
       env: {
