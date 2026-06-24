@@ -223,7 +223,70 @@ describe("GitHubPullRequestAdapter", () => {
     });
   });
 
-  it("does not support pull request merge yet", async () => {
+  it("merges a pull request with an expected head SHA", async () => {
+    const requests: Array<{ body: unknown; headers: Headers; method: string; url: string }> = [];
+    const adapter = new GitHubPullRequestAdapter({
+      apiBaseUrl: "https://api.github.test",
+      fetcher: async (url, init) => {
+        requests.push({
+          body: JSON.parse(String(init?.body)),
+          headers: new Headers(init?.headers),
+          method: init?.method ?? "GET",
+          url: String(url),
+        });
+
+        return Response.json({
+          merged: true,
+          message: "Pull Request successfully merged",
+          sha: "abc123",
+        });
+      },
+      tokenProvider: async () => "installation-token",
+    });
+
+    const result = await adapter.execute({
+      ...createPullRequestAction(),
+      action: "pull_requests.merge",
+      input: {
+        github: {
+          commitMessage: "Reviewed by AgentGate.",
+          commitTitle: "Merge smoke PR",
+          expectedHeadSha: "abc123",
+          mergeMethod: "squash",
+          pullNumber: 7,
+        },
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+    });
+
+    expect(requests).toHaveLength(1);
+    const request = requests[0];
+
+    if (!request) {
+      throw new Error("Expected one GitHub merge PR request.");
+    }
+
+    expect(request.url).toBe("https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/pulls/7/merge");
+    expect(request.method).toBe("PUT");
+    expect(request.headers.get("authorization")).toBe("Bearer installation-token");
+    expect(request.body).toEqual({
+      commit_message: "Reviewed by AgentGate.",
+      commit_title: "Merge smoke PR",
+      merge_method: "squash",
+      sha: "abc123",
+    });
+    expect(result).toEqual({
+      data: {
+        merged: true,
+        message: "Pull Request successfully merged",
+        sha: "abc123",
+      },
+      externalRequestId: "abc123",
+      ok: true,
+    });
+  });
+
+  it("refuses merge execution without an expected head SHA", async () => {
     const adapter = new GitHubPullRequestAdapter({
       fetcher: async () => Response.json({}),
       tokenProvider: async () => "installation-token",
@@ -233,11 +296,45 @@ describe("GitHubPullRequestAdapter", () => {
       adapter.execute({
         ...createPullRequestAction(),
         action: "pull_requests.merge",
+        input: {
+          github: {
+            pullNumber: 7,
+          },
+          repository: "nodirumurkulov/agentgate-sandbox",
+        },
       }),
     ).resolves.toEqual({
       data: {
+        error: "missing_github_pull_request_input",
+        fields: ["expectedHeadSha"],
+      },
+      ok: false,
+    });
+  });
+
+  it("refuses merge execution with an unsupported merge method", async () => {
+    const adapter = new GitHubPullRequestAdapter({
+      fetcher: async () => Response.json({}),
+      tokenProvider: async () => "installation-token",
+    });
+
+    await expect(
+      adapter.execute({
+        ...createPullRequestAction(),
         action: "pull_requests.merge",
-        error: "unsupported_action",
+        input: {
+          github: {
+            expectedHeadSha: "abc123",
+            mergeMethod: "fast-forward",
+            pullNumber: 7,
+          },
+          repository: "nodirumurkulov/agentgate-sandbox",
+        },
+      }),
+    ).resolves.toEqual({
+      data: {
+        error: "missing_github_pull_request_input",
+        fields: ["mergeMethod"],
       },
       ok: false,
     });

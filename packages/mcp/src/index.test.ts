@@ -144,6 +144,51 @@ describe("callGuardedTool", () => {
     ]);
   });
 
+  it("forwards GitHub merge pull request input", async () => {
+    const calls: unknown[] = [];
+    const client = {
+      async execute(request: unknown) {
+        calls.push(request);
+
+        return {
+          decision: {
+            outcome: "allow",
+          },
+        };
+      },
+    };
+
+    await callGuardedTool(
+      "agentgate.github.merge_pull_request",
+      {
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        github: {
+          expectedHeadSha: "abc123",
+          mergeMethod: "squash",
+          pullNumber: 7,
+        },
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+      client,
+    );
+
+    expect(calls).toEqual([
+      {
+        action: "pull_requests.merge",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        github: {
+          expectedHeadSha: "abc123",
+          mergeMethod: "squash",
+          pullNumber: 7,
+        },
+        integration: "github",
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+    ]);
+  });
+
   it("throws for unknown tool names", async () => {
     await expect(
       callGuardedTool(
