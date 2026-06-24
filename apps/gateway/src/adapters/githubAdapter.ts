@@ -21,6 +21,15 @@ interface GitHubCreatePullRequestResponse {
   number?: number;
 }
 
+interface GitHubUpdatePullRequestInput {
+  base?: string;
+  body?: string;
+  maintainerCanModify?: boolean;
+  pullNumber: number;
+  state?: "open" | "closed";
+  title?: string;
+}
+
 const githubApiVersion = "2022-11-28";
 
 export class GitHubPullRequestAdapter implements IntegrationAdapter {
@@ -37,18 +46,26 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
   }
 
   async execute(request: ActionRequest): Promise<IntegrationResult> {
-    if (request.action !== "pull_requests.create") {
-      return {
-        data: {
-          action: request.action,
-          error: "unsupported_action",
-        },
-        ok: false,
-      };
+    if (request.action === "pull_requests.create") {
+      return this.createPullRequest(request);
     }
 
+    if (request.action === "pull_requests.update") {
+      return this.updatePullRequest(request);
+    }
+
+    return {
+      data: {
+        action: request.action,
+        error: "unsupported_action",
+      },
+      ok: false,
+    };
+  }
+
+  private async createPullRequest(request: ActionRequest): Promise<IntegrationResult> {
     const repository = readString(request.input?.repository);
-    const pullRequestInput = readPullRequestInput(request.input?.github);
+    const pullRequestInput = readCreatePullRequestInput(request.input?.github);
 
     if (!repository) {
       return {
@@ -72,38 +89,88 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
 
     const token = await this.tokenProvider();
     const response = await this.fetcher(`${this.apiBaseUrl}/repos/${repository}/pulls`, {
-      body: JSON.stringify(toGitHubPullRequestBody(pullRequestInput.value)),
-      headers: {
-        accept: "application/vnd.github+json",
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-        "x-github-api-version": githubApiVersion,
-      },
+      body: JSON.stringify(toGitHubCreatePullRequestBody(pullRequestInput.value)),
+      headers: createGitHubHeaders(token),
       method: "POST",
     });
     const payload = (await response.json()) as GitHubCreatePullRequestResponse;
 
-    if (!response.ok || !payload.html_url) {
+    return toPullRequestResult(response, payload, "github_create_pull_request_failed");
+  }
+
+  private async updatePullRequest(request: ActionRequest): Promise<IntegrationResult> {
+    const repository = readString(request.input?.repository);
+    const pullRequestInput = readUpdatePullRequestInput(request.input?.github);
+
+    if (!repository) {
       return {
         data: {
-          error: "github_create_pull_request_failed",
+          error: "missing_github_pull_request_input",
+          fields: ["repository"],
         },
         ok: false,
       };
     }
 
-    return {
-      data: {
-        number: payload.number,
-        url: payload.html_url,
+    if (!pullRequestInput.ok) {
+      return {
+        data: {
+          error: "missing_github_pull_request_input",
+          fields: pullRequestInput.fields,
+        },
+        ok: false,
+      };
+    }
+
+    const token = await this.tokenProvider();
+    const response = await this.fetcher(
+      `${this.apiBaseUrl}/repos/${repository}/pulls/${pullRequestInput.value.pullNumber}`,
+      {
+        body: JSON.stringify(toGitHubUpdatePullRequestBody(pullRequestInput.value)),
+        headers: createGitHubHeaders(token),
+        method: "PATCH",
       },
-      externalRequestId: payload.html_url,
-      ok: true,
-    };
+    );
+    const payload = (await response.json()) as GitHubCreatePullRequestResponse;
+
+    return toPullRequestResult(response, payload, "github_update_pull_request_failed");
   }
 }
 
-function toGitHubPullRequestBody(input: GitHubCreatePullRequestInput) {
+function toPullRequestResult(
+  response: Response,
+  payload: GitHubCreatePullRequestResponse,
+  error: string,
+): IntegrationResult {
+  if (!response.ok || !payload.html_url) {
+    return {
+      data: {
+        error,
+      },
+      ok: false,
+    };
+  }
+
+  return {
+    data: {
+      number: payload.number,
+      url: payload.html_url,
+    },
+    externalRequestId: payload.html_url,
+    ok: true,
+  };
+}
+
+function createGitHubHeaders(token: string): HeadersInit {
+  return {
+    accept: "application/vnd.github+json",
+    authorization: `Bearer ${token}`,
+    "content-type": "application/json",
+    "x-github-api-version": githubApiVersion,
+  };
+}
+
+function toGitHubCreatePullRequestBody(input: GitHubCreatePullRequestInput) {
   return {
     base: input.base,
     ...(input.body ? { body: input.body } : {}),
@@ -116,7 +183,19 @@ function toGitHubPullRequestBody(input: GitHubCreatePullRequestInput) {
   };
 }
 
-function readPullRequestInput(value: unknown):
+function toGitHubUpdatePullRequestBody(input: GitHubUpdatePullRequestInput) {
+  return {
+    ...(input.base ? { base: input.base } : {}),
+    ...(input.body ? { body: input.body } : {}),
+    ...(typeof input.maintainerCanModify === "boolean"
+      ? { maintainer_can_modify: input.maintainerCanModify }
+      : {}),
+    ...(input.state ? { state: input.state } : {}),
+    ...(input.title ? { title: input.title } : {}),
+  };
+}
+
+function readCreatePullRequestInput(value: unknown):
   | { ok: true; value: GitHubCreatePullRequestInput }
   | { fields: string[]; ok: false } {
   if (!isRecord(value)) {
@@ -155,6 +234,70 @@ function readPullRequestInput(value: unknown):
       title,
     },
   };
+}
+
+function readUpdatePullRequestInput(value: unknown):
+  | { ok: true; value: GitHubUpdatePullRequestInput }
+  | { fields: string[]; ok: false } {
+  if (!isRecord(value)) {
+    return {
+      fields: ["pullNumber"],
+      ok: false,
+    };
+  }
+
+  const pullNumber = readPositiveInteger(value.pullNumber);
+  const base = readString(value.base);
+  const body = typeof value.body === "string" ? value.body.trim() : undefined;
+  const maintainerCanModify =
+    typeof value.maintainerCanModify === "boolean" ? value.maintainerCanModify : undefined;
+  const state = readPullRequestState(value.state);
+  const title = readString(value.title);
+
+  if (!pullNumber) {
+    return {
+      fields: ["pullNumber"],
+      ok: false,
+    };
+  }
+
+  if (value.state !== undefined && !state) {
+    return {
+      fields: ["state"],
+      ok: false,
+    };
+  }
+
+  if (!base && !body && typeof maintainerCanModify !== "boolean" && !state && !title) {
+    return {
+      fields: ["base", "body", "maintainerCanModify", "state", "title"],
+      ok: false,
+    };
+  }
+
+  return {
+    ok: true,
+    value: {
+      ...(base ? { base } : {}),
+      ...(body ? { body } : {}),
+      ...(typeof maintainerCanModify === "boolean" ? { maintainerCanModify } : {}),
+      pullNumber,
+      ...(state ? { state } : {}),
+      ...(title ? { title } : {}),
+    },
+  };
+}
+
+function readPositiveInteger(value: unknown): number | undefined {
+  if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+    return undefined;
+  }
+
+  return value;
+}
+
+function readPullRequestState(value: unknown): "open" | "closed" | undefined {
+  return value === "open" || value === "closed" ? value : undefined;
 }
 
 function readString(value: unknown): string | undefined {

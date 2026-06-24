@@ -19,13 +19,24 @@ export interface AgentGateActionRequest {
   target?: string;
 }
 
-export interface GitHubPullRequestInput {
+export type GitHubPullRequestInput = GitHubCreatePullRequestInput | GitHubUpdatePullRequestInput;
+
+export interface GitHubCreatePullRequestInput {
   base: string;
   body?: string;
   draft?: boolean;
   head: string;
   maintainerCanModify?: boolean;
   title: string;
+}
+
+export interface GitHubUpdatePullRequestInput {
+  base?: string;
+  body?: string;
+  maintainerCanModify?: boolean;
+  pullNumber: number;
+  state?: "open" | "closed";
+  title?: string;
 }
 
 export interface AgentGateAuthorizeResponse {
