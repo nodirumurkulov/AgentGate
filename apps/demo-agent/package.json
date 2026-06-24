@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc -p tsconfig.json --noEmit",
     "dev": "tsx src/index.ts",
+    "smoke:live": "tsx src/liveSmoke.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
