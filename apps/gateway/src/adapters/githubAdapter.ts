@@ -60,16 +60,20 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
   }
 
   async execute(request: ActionRequest): Promise<IntegrationResult> {
-    if (request.action === "pull_requests.create") {
-      return this.createPullRequest(request);
-    }
+    try {
+      if (request.action === "pull_requests.create") {
+        return await this.createPullRequest(request);
+      }
 
-    if (request.action === "pull_requests.update") {
-      return this.updatePullRequest(request);
-    }
+      if (request.action === "pull_requests.update") {
+        return await this.updatePullRequest(request);
+      }
 
-    if (request.action === "pull_requests.merge") {
-      return this.mergePullRequest(request);
+      if (request.action === "pull_requests.merge") {
+        return await this.mergePullRequest(request);
+      }
+    } catch {
+      return githubRequestFailure(githubRequestErrorForAction(request.action));
     }
 
     return {
@@ -191,6 +195,27 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
 
     return toMergeResult(response, payload);
   }
+}
+
+function githubRequestFailure(error: string): IntegrationResult {
+  return {
+    data: {
+      error,
+    },
+    ok: false,
+  };
+}
+
+function githubRequestErrorForAction(action: string): string {
+  if (action === "pull_requests.update") {
+    return "github_update_pull_request_failed";
+  }
+
+  if (action === "pull_requests.merge") {
+    return "github_merge_pull_request_failed";
+  }
+
+  return "github_create_pull_request_failed";
 }
 
 function toPullRequestResult(

@@ -81,6 +81,44 @@ describe("GitHubPullRequestAdapter", () => {
     });
   });
 
+  it("returns a sanitized integration failure when GitHub auth fails", async () => {
+    const adapter = new GitHubPullRequestAdapter({
+      fetcher: async () => Response.json({}),
+      tokenProvider: async () => {
+        throw new Error("installation-token-should-not-leak");
+      },
+    });
+
+    const result = await adapter.execute(createPullRequestAction());
+
+    expect(result).toEqual({
+      data: {
+        error: "github_create_pull_request_failed",
+      },
+      ok: false,
+    });
+    expect(JSON.stringify(result)).not.toContain("installation-token-should-not-leak");
+  });
+
+  it("returns a sanitized integration failure when GitHub cannot be reached", async () => {
+    const adapter = new GitHubPullRequestAdapter({
+      fetcher: async () => {
+        throw new Error("github-network-secret-should-not-leak");
+      },
+      tokenProvider: async () => "installation-token",
+    });
+
+    const result = await adapter.execute(createPullRequestAction());
+
+    expect(result).toEqual({
+      data: {
+        error: "github_create_pull_request_failed",
+      },
+      ok: false,
+    });
+    expect(JSON.stringify(result)).not.toContain("github-network-secret-should-not-leak");
+  });
+
   it("updates a pull request with an installation token", async () => {
     const requests: Array<{ body: unknown; headers: Headers; method: string; url: string }> = [];
     const adapter = new GitHubPullRequestAdapter({

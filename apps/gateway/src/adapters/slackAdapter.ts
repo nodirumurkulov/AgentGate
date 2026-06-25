@@ -31,23 +31,25 @@ export class SlackApprovalAdapter implements ApprovalNotificationAdapter {
   }
 
   async notifyApprovalRequired(approval: ApprovalRecord): Promise<IntegrationResult> {
-    const response = await this.fetcher("https://slack.com/api/chat.postMessage", {
-      body: JSON.stringify(createApprovalMessage(this.channelId, this.publicUrl, approval)),
-      headers: {
-        authorization: `Bearer ${this.botToken}`,
-        "content-type": "application/json",
-      },
-      method: "POST",
-    });
-    const payload = (await response.json()) as SlackPostMessageResponse;
+    let payload: SlackPostMessageResponse;
+    let response: Response;
+
+    try {
+      response = await this.fetcher("https://slack.com/api/chat.postMessage", {
+        body: JSON.stringify(createApprovalMessage(this.channelId, this.publicUrl, approval)),
+        headers: {
+          authorization: `Bearer ${this.botToken}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
+      });
+      payload = (await response.json()) as SlackPostMessageResponse;
+    } catch {
+      return slackPostFailure();
+    }
 
     if (!response.ok || payload.ok !== true || !payload.ts) {
-      return {
-        data: {
-          error: payload.error ?? "slack_post_failed",
-        },
-        ok: false,
-      };
+      return slackPostFailure(payload.error);
     }
 
     return {
@@ -59,6 +61,15 @@ export class SlackApprovalAdapter implements ApprovalNotificationAdapter {
       ok: true,
     };
   }
+}
+
+function slackPostFailure(error = "slack_post_failed"): IntegrationResult {
+  return {
+    data: {
+      error,
+    },
+    ok: false,
+  };
 }
 
 function createApprovalMessage(channel: string, publicUrl: string, approval: ApprovalRecord) {

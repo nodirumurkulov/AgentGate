@@ -65,4 +65,25 @@ describe("SlackApprovalAdapter", () => {
       ok: true,
     });
   });
+
+  it("returns a sanitized integration failure when Slack cannot be reached", async () => {
+    const adapter = new SlackApprovalAdapter({
+      botToken: "xoxb-test-token",
+      channelId: "C123",
+      fetcher: async () => {
+        throw new Error("xoxb-secret-token-should-not-leak");
+      },
+      publicUrl: "https://agentgate.example.test",
+    });
+
+    const result = await adapter.notifyApprovalRequired(approval);
+
+    expect(result).toEqual({
+      data: {
+        error: "slack_post_failed",
+      },
+      ok: false,
+    });
+    expect(JSON.stringify(result)).not.toContain("xoxb-secret-token-should-not-leak");
+  });
 });
