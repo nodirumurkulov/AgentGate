@@ -95,16 +95,42 @@ describe("App", () => {
             riskReasons: ["Approval callback was already decided."],
             timestamp: "2026-06-25T00:02:00.000Z",
           },
+          {
+            action: "slack.approval.approved",
+            changedFiles: ["src/auth/session.ts"],
+            decision: "allow",
+            id: "audit_approved",
+            repository: "nodirumurkulov/AgentGate",
+            riskLevel: "high",
+            riskReasons: ["Approval granted by reviewer."],
+            timestamp: "2026-06-25T00:03:00.000Z",
+          },
+          {
+            action: "slack.approval.denied",
+            changedFiles: ["src/auth/session.ts"],
+            decision: "block",
+            id: "audit_denied",
+            repository: "nodirumurkulov/AgentGate",
+            riskLevel: "high",
+            riskReasons: ["Approval denied by reviewer."],
+            timestamp: "2026-06-25T00:04:00.000Z",
+          },
         ]}
       />,
     );
 
+    expect(screen.getByText("Approved callbacks")).toBeTruthy();
+    expect(screen.getByText("Denied callbacks")).toBeTruthy();
     expect(screen.getByText("Expired approvals")).toBeTruthy();
     expect(screen.getByText("Invalid tokens")).toBeTruthy();
     expect(screen.getByText("Replayed callbacks")).toBeTruthy();
+    expect(screen.getByText("slack.approval.approved")).toBeTruthy();
+    expect(screen.getByText("slack.approval.denied")).toBeTruthy();
     expect(screen.getByText("slack.approval.expired")).toBeTruthy();
     expect(screen.getByText("slack.approval.invalid_token")).toBeTruthy();
     expect(screen.getByText("slack.approval.replayed")).toBeTruthy();
+    expect(screen.getByText("Approval granted by reviewer.")).toBeTruthy();
+    expect(screen.getByText("Approval denied by reviewer.")).toBeTruthy();
     expect(screen.getByText("Approval callback token expired.")).toBeTruthy();
     expect(screen.getByText("Invalid approval callback token.")).toBeTruthy();
     expect(screen.getByText("Approval callback was already decided.")).toBeTruthy();

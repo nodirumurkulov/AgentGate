@@ -98,6 +98,8 @@ function countDecisions(events: DashboardAuditEvent[]) {
     { label: "Low risk allowed", value: countBy(events, "allow") },
     { label: "High risk approval", value: countBy(events, "approval_required") },
     { label: "Blocked changes", value: countBy(events, "block") },
+    { label: "Approved callbacks", value: countByAction(events, "slack.approval.approved") },
+    { label: "Denied callbacks", value: countByAction(events, "slack.approval.denied") },
     { label: "Expired approvals", value: countByAction(events, "slack.approval.expired") },
     { label: "Invalid tokens", value: countByAction(events, "slack.approval.invalid_token") },
     { label: "Replayed callbacks", value: countByAction(events, "slack.approval.replayed") },
