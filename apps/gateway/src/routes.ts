@@ -4,6 +4,7 @@ import {
   createAuditEvent,
   denyApproval,
   evaluateAction,
+  expireApproval,
   type ActionRequest,
   type ApprovalRecord,
   type AuditEvent,
@@ -65,6 +66,8 @@ const policy: PolicyDocument = {
   ],
   version: 1,
 };
+
+const approvalCallbackTokenTtlMs = 15 * 60 * 1000;
 
 export function registerRoutes(
   server: FastifyInstance,
@@ -235,6 +238,17 @@ export function registerRoutes(
       });
     }
 
+    const expiredApproval = expireApprovalIfCallbackTokenExpired(approval);
+
+    if (expiredApproval) {
+      store.replaceApproval(expiredApproval);
+
+      return reply.code(410).send({
+        approval: toPublicApproval(expiredApproval),
+        error: "approval_expired",
+      });
+    }
+
     const result = await transitionApprovalFromCallback(approval, callback, adapters);
     const responseBody = toApprovalCallbackResponse(result);
 
@@ -287,6 +301,17 @@ export function registerRoutes(
       return reply.code(409).send({
         approval: toPublicApproval(approval),
         error: "approval_already_decided",
+      });
+    }
+
+    const expiredApproval = expireApprovalIfCallbackTokenExpired(approval);
+
+    if (expiredApproval) {
+      store.replaceApproval(expiredApproval);
+
+      return reply.code(410).send({
+        approval: toPublicApproval(expiredApproval),
+        error: "approval_expired",
       });
     }
 
@@ -459,6 +484,7 @@ function createPendingApproval(
     action: body.action,
     actionRequest,
     callbackToken,
+    callbackTokenExpiresAt: new Date(Date.now() + approvalCallbackTokenTtlMs).toISOString(),
     callbackTokenHash: hashApprovalCallbackToken(callbackToken),
     id: `approval_${store.listApprovals().length + 1}`,
     repository: body.repository,
@@ -500,6 +526,24 @@ function approvalTokenHashMatches(expectedHash: string, callbackToken: string): 
 
 function isSha256Hex(value: string): boolean {
   return /^[a-f0-9]{64}$/.test(value);
+}
+
+function expireApprovalIfCallbackTokenExpired(approval: ApprovalRecord): ApprovalRecord | undefined {
+  if (!approval.callbackTokenExpiresAt) {
+    return undefined;
+  }
+
+  const expiresAt = Date.parse(approval.callbackTokenExpiresAt);
+
+  if (Number.isNaN(expiresAt) || expiresAt > Date.now()) {
+    return undefined;
+  }
+
+  return expireApproval(approval, {
+    decidedAt: new Date().toISOString(),
+    decidedBy: "agentgate",
+    reason: "Approval callback token expired.",
+  });
 }
 
 function transitionApprovalFromCallback(
