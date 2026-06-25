@@ -589,15 +589,19 @@ function approvalTokenIsValid(
   approval: ApprovalRecord,
   callback: SlackApprovalCallbackBody,
 ): boolean {
-  if (!callback.callbackToken) {
-    return true;
-  }
-
   if (approval.callbackTokenHash) {
+    if (!callback.callbackToken) {
+      return false;
+    }
+
     return approvalTokenHashMatches(approval.callbackTokenHash, callback.callbackToken);
   }
 
-  return approval.callbackToken === callback.callbackToken;
+  if (approval.callbackToken) {
+    return approval.callbackToken === callback.callbackToken;
+  }
+
+  return !callback.callbackToken;
 }
 
 function hashApprovalCallbackToken(callbackToken: string): string {

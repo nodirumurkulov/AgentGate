@@ -433,10 +433,16 @@ describe("gateway app", () => {
   });
 
   it("approves a pending approval from a signed Slack callback", async () => {
-    const app = createGatewayApp({ slackSigningSecret });
+    const slackApprovals: ApprovalRecord[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters([], slackApprovals),
+      slackSigningSecret,
+    });
     const approval = await createPendingApproval(app);
+    const callbackToken = requireCallbackToken(slackApprovals);
     const payload = {
       approvalId: approval.id,
+      callbackToken,
       decidedBy: "security-reviewer",
       decision: "approve",
     };
@@ -459,8 +465,9 @@ describe("gateway app", () => {
 
   it("executes the stored action after a signed Slack approval", async () => {
     const githubRequests: unknown[] = [];
+    const slackApprovals: ApprovalRecord[] = [];
     const app = createGatewayApp({
-      adapters: createRecordingAdapters(githubRequests),
+      adapters: createRecordingAdapters(githubRequests, slackApprovals),
       slackSigningSecret,
     });
     const approval = await createPendingApproval(app, {
@@ -469,8 +476,10 @@ describe("gateway app", () => {
         title: "Approved auth update",
       },
     });
+    const callbackToken = requireCallbackToken(slackApprovals);
     const payload = {
       approvalId: approval.id,
+      callbackToken,
       decidedBy: "security-reviewer",
       decision: "approve",
     };
@@ -535,11 +544,18 @@ describe("gateway app", () => {
     const env = {
       AGENTGATE_STORE_PATH: createStorePath(),
     };
-    const firstApp = createGatewayApp({ env, slackSigningSecret });
+    const slackApprovals: ApprovalRecord[] = [];
+    const firstApp = createGatewayApp({
+      adapters: createRecordingAdapters([], slackApprovals),
+      env,
+      slackSigningSecret,
+    });
     const approval = await createPendingApproval(firstApp);
+    const callbackToken = requireCallbackToken(slackApprovals);
     const secondApp = createGatewayApp({ env, slackSigningSecret });
     const payload = {
       approvalId: approval.id,
+      callbackToken,
       decidedBy: "security-reviewer",
       decision: "approve",
     };
@@ -613,6 +629,31 @@ describe("gateway app", () => {
     expect(githubRequests).toHaveLength(1);
   });
 
+  it("rejects signed Slack approval callbacks without callback tokens", async () => {
+    const slackApprovals: ApprovalRecord[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters([], slackApprovals),
+      slackSigningSecret,
+    });
+    const approval = await createPendingApproval(app);
+    const payload = {
+      approvalId: approval.id,
+      decidedBy: "security-reviewer",
+      decision: "approve",
+    };
+
+    const response = await app.inject({
+      headers: signedSlackHeaders(payload),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(401);
+    expect(response.json()).toEqual({ error: "invalid_approval_token" });
+    expect(slackApprovals).toHaveLength(1);
+  });
+
   it("uses the configured approval callback token TTL", async () => {
     const env = {
       AGENTGATE_APPROVAL_TOKEN_TTL_SECONDS: "1",
@@ -636,10 +677,16 @@ describe("gateway app", () => {
   });
 
   it("denies a pending approval from a signed Slack callback", async () => {
-    const app = createGatewayApp({ slackSigningSecret });
+    const slackApprovals: ApprovalRecord[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters([], slackApprovals),
+      slackSigningSecret,
+    });
     const approval = await createPendingApproval(app);
+    const callbackToken = requireCallbackToken(slackApprovals);
     const payload = {
       approvalId: approval.id,
+      callbackToken,
       decidedBy: "security-reviewer",
       decision: "deny",
       reason: "Auth change needs owner review.",
@@ -662,13 +709,16 @@ describe("gateway app", () => {
 
   it("does not execute the stored action after a signed Slack denial", async () => {
     const githubRequests: unknown[] = [];
+    const slackApprovals: ApprovalRecord[] = [];
     const app = createGatewayApp({
-      adapters: createRecordingAdapters(githubRequests),
+      adapters: createRecordingAdapters(githubRequests, slackApprovals),
       slackSigningSecret,
     });
     const approval = await createPendingApproval(app);
+    const callbackToken = requireCallbackToken(slackApprovals);
     const payload = {
       approvalId: approval.id,
+      callbackToken,
       decidedBy: "security-reviewer",
       decision: "deny",
       reason: "Needs owner review.",
