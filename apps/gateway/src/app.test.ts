@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalRecord } from "@agentgate/core";
@@ -766,6 +766,58 @@ describe("gateway app", () => {
     expect(githubRequests).toHaveLength(1);
   });
 
+  it("expires stale Slack interaction callbacks without executing GitHub", async () => {
+    const env = {
+      AGENTGATE_STORE_PATH: createStorePath(),
+    };
+    const githubRequests: unknown[] = [];
+    const slackApprovals: ApprovalRecord[] = [];
+    const firstApp = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests, slackApprovals),
+      env,
+      slackSigningSecret,
+    });
+    const approval = await createPendingApproval(firstApp);
+    const callbackToken = requireCallbackToken(slackApprovals);
+    expireStoredApprovalCallbackToken(env.AGENTGATE_STORE_PATH);
+    const secondApp = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests),
+      env,
+      slackSigningSecret,
+    });
+    const body = createSlackInteractionBody({
+      actions: [
+        {
+          action_id: "agentgate.approve",
+          value: `${approval.id}:${callbackToken}`,
+        },
+      ],
+      user: {
+        id: "U123",
+      },
+    });
+
+    const response = await secondApp.inject({
+      headers: {
+        ...signedSlackRawBodyHeaders(body),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      method: "POST",
+      payload: body,
+      url: "/v1/slack/interactions",
+    });
+
+    expect(response.statusCode).toBe(410);
+    expect(response.json()).toMatchObject({
+      approval: {
+        id: approval.id,
+        status: "expired",
+      },
+      error: "approval_expired",
+    });
+    expect(githubRequests).toEqual([]);
+  });
+
   it("rejects malformed Slack interaction payloads", async () => {
     const app = createGatewayApp({ slackSigningSecret });
     const body = new URLSearchParams({
@@ -954,6 +1006,20 @@ function readStoredApproval(storePath: string): Record<string, string | undefine
   }
 
   return approval;
+}
+
+function expireStoredApprovalCallbackToken(storePath: string): void {
+  const state = JSON.parse(readFileSync(storePath, "utf8")) as {
+    approvals?: Array<Record<string, string | undefined>>;
+  };
+  const approval = state.approvals?.[0];
+
+  if (!approval) {
+    throw new Error("Expected approval to be persisted.");
+  }
+
+  approval.callbackTokenExpiresAt = "1970-01-01T00:00:00.000Z";
+  writeFileSync(storePath, `${JSON.stringify(state, null, 2)}\n`, "utf8");
 }
 
 function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters {

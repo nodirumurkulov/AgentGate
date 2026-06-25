@@ -6,6 +6,7 @@ export interface ApprovalRecord {
   action: string;
   actionRequest?: ActionRequest;
   callbackToken?: string;
+  callbackTokenExpiresAt?: string;
   callbackTokenHash?: string;
   decidedAt?: string;
   decidedBy?: string;
