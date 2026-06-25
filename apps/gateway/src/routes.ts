@@ -248,6 +248,7 @@ export function registerRoutes(
 
     if (expiredApproval) {
       store.replaceApproval(expiredApproval);
+      appendApprovalCallbackAuditEvent(store, expiredApproval, "expired");
 
       return reply.code(410).send({
         approval: toPublicApproval(expiredApproval),
@@ -314,6 +315,7 @@ export function registerRoutes(
 
     if (expiredApproval) {
       store.replaceApproval(expiredApproval);
+      appendApprovalCallbackAuditEvent(store, expiredApproval, "expired");
 
       return reply.code(410).send({
         approval: toPublicApproval(expiredApproval),
@@ -340,6 +342,8 @@ interface GitHubWebhookAuditInput {
   payload: Record<string, unknown>;
   store: GatewayStore;
 }
+
+type ApprovalCallbackAuditOutcome = "expired";
 
 type ApprovalCallbackResult = {
   approval: ApprovalRecord;
@@ -444,6 +448,43 @@ function appendGitHubWebhookAuditEvent(input: GitHubWebhookAuditInput): AuditEve
   input.store.appendAuditEvent(event);
 
   return event;
+}
+
+function appendApprovalCallbackAuditEvent(
+  store: GatewayStore,
+  approval: ApprovalRecord,
+  outcome: ApprovalCallbackAuditOutcome,
+): AuditEvent {
+  const previousEvent = store.listAuditEvents().at(-1);
+  const sequence = store.listAuditEvents().length + 1;
+  const event = createAuditEvent({
+    action: `slack.approval.${outcome}`,
+    changedFiles: readApprovalChangedFiles(approval),
+    decision: "block",
+    id: `audit_${sequence}`,
+    payload: {
+      approvalId: approval.id,
+      status: approval.status,
+    },
+    previousHash: previousEvent?.hash ?? "genesis",
+    repository: approval.repository,
+    requestId: `approval_${approval.id}_${outcome}`,
+    riskLevel: approval.riskLevel,
+    riskReasons: ["Approval callback token expired."],
+    timestamp: new Date().toISOString(),
+  });
+
+  store.appendAuditEvent(event);
+
+  return event;
+}
+
+function readApprovalChangedFiles(approval: ApprovalRecord): string[] {
+  const changedFiles = approval.actionRequest?.input?.changedFiles;
+
+  return Array.isArray(changedFiles) && changedFiles.every((file) => typeof file === "string")
+    ? changedFiles
+    : [];
 }
 
 function githubDeliveryWasProcessed(store: GatewayStore, deliveryId: string): boolean {

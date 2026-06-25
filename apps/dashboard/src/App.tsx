@@ -98,9 +98,14 @@ function countDecisions(events: DashboardAuditEvent[]) {
     { label: "Low risk allowed", value: countBy(events, "allow") },
     { label: "High risk approval", value: countBy(events, "approval_required") },
     { label: "Blocked changes", value: countBy(events, "block") },
+    { label: "Expired approvals", value: countByAction(events, "slack.approval.expired") },
   ];
 }
 
 function countBy(events: DashboardAuditEvent[], decision: DashboardAuditEvent["decision"]): number {
   return events.filter((event) => event.decision === decision).length;
+}
+
+function countByAction(events: DashboardAuditEvent[], action: string): number {
+  return events.filter((event) => event.action === action).length;
 }
