@@ -735,6 +735,27 @@ describe("gateway app", () => {
 
     expect(response.statusCode).toBe(401);
     expect(response.json()).toEqual({ error: "invalid_approval_token" });
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+    const events = auditResponse.json().events;
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      action: "slack.approval.invalid_token",
+      changedFiles: ["src/auth/session.ts"],
+      decision: "block",
+      payload: {
+        approvalId: approval.id,
+        status: "pending",
+      },
+      repository: "nodirumurkulov/AgentGate",
+      riskLevel: "high",
+      riskReasons: ["Invalid approval callback token."],
+    });
+    expect(JSON.stringify(events[1].payload)).not.toContain("wrong-token");
   });
 
   it("rejects replayed Slack approval callbacks without executing twice", async () => {
@@ -786,6 +807,26 @@ describe("gateway app", () => {
     });
     expect(replayResponse.json().approval.callbackToken).toBeUndefined();
     expect(githubRequests).toHaveLength(1);
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+    const events = auditResponse.json().events;
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      action: "slack.approval.replayed",
+      changedFiles: ["src/auth/session.ts"],
+      decision: "block",
+      payload: {
+        approvalId: approval.id,
+        status: "approved",
+      },
+      repository: "nodirumurkulov/AgentGate",
+      riskLevel: "high",
+      riskReasons: ["Approval callback was already decided."],
+    });
   });
 
   it("expires stale Slack interaction callbacks without executing GitHub", async () => {

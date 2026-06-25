@@ -61,7 +61,7 @@ describe("App", () => {
     expect(newerAuditId.compareDocumentPosition(olderAuditId) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
-  it("summarizes expired approval callback events", () => {
+  it("summarizes rejected approval callback events", () => {
     render(
       <App
         initialAuditEvents={[
@@ -75,12 +75,38 @@ describe("App", () => {
             riskReasons: ["Approval callback token expired."],
             timestamp: "2026-06-25T00:00:00.000Z",
           },
+          {
+            action: "slack.approval.invalid_token",
+            changedFiles: ["src/auth/session.ts"],
+            decision: "block",
+            id: "audit_invalid",
+            repository: "nodirumurkulov/AgentGate",
+            riskLevel: "high",
+            riskReasons: ["Invalid approval callback token."],
+            timestamp: "2026-06-25T00:01:00.000Z",
+          },
+          {
+            action: "slack.approval.replayed",
+            changedFiles: ["src/auth/session.ts"],
+            decision: "block",
+            id: "audit_replayed",
+            repository: "nodirumurkulov/AgentGate",
+            riskLevel: "high",
+            riskReasons: ["Approval callback was already decided."],
+            timestamp: "2026-06-25T00:02:00.000Z",
+          },
         ]}
       />,
     );
 
     expect(screen.getByText("Expired approvals")).toBeTruthy();
+    expect(screen.getByText("Invalid tokens")).toBeTruthy();
+    expect(screen.getByText("Replayed callbacks")).toBeTruthy();
     expect(screen.getByText("slack.approval.expired")).toBeTruthy();
+    expect(screen.getByText("slack.approval.invalid_token")).toBeTruthy();
+    expect(screen.getByText("slack.approval.replayed")).toBeTruthy();
     expect(screen.getByText("Approval callback token expired.")).toBeTruthy();
+    expect(screen.getByText("Invalid approval callback token.")).toBeTruthy();
+    expect(screen.getByText("Approval callback was already decided.")).toBeTruthy();
   });
 });
