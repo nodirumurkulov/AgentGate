@@ -81,6 +81,41 @@ describe("GitHubPullRequestAdapter", () => {
     });
   });
 
+  it("refuses create PR execution with a malformed repository name", async () => {
+    let tokenRequests = 0;
+    const adapter = new GitHubPullRequestAdapter({
+      fetcher: async () => {
+        throw new Error("GitHub should not be called for malformed repositories.");
+      },
+      tokenProvider: async () => {
+        tokenRequests += 1;
+
+        return "installation-token";
+      },
+    });
+
+    await expect(
+      adapter.execute({
+        ...createPullRequestAction(),
+        input: {
+          github: {
+            base: "main",
+            head: "agentgate-smoke",
+            title: "AgentGate smoke test",
+          },
+          repository: "nodirumurkulov/agentgate-sandbox/pulls/7",
+        },
+      }),
+    ).resolves.toEqual({
+      data: {
+        error: "missing_github_pull_request_input",
+        fields: ["repository"],
+      },
+      ok: false,
+    });
+    expect(tokenRequests).toBe(0);
+  });
+
   it("returns a sanitized integration failure when GitHub auth fails", async () => {
     const adapter = new GitHubPullRequestAdapter({
       fetcher: async () => Response.json({}),

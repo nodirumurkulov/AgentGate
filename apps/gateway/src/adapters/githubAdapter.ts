@@ -86,7 +86,7 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
   }
 
   private async createPullRequest(request: ActionRequest): Promise<IntegrationResult> {
-    const repository = readString(request.input?.repository);
+    const repository = readRepositoryPath(request.input?.repository);
     const pullRequestInput = readCreatePullRequestInput(request.input?.github);
 
     if (!repository) {
@@ -121,7 +121,7 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
   }
 
   private async updatePullRequest(request: ActionRequest): Promise<IntegrationResult> {
-    const repository = readString(request.input?.repository);
+    const repository = readRepositoryPath(request.input?.repository);
     const pullRequestInput = readUpdatePullRequestInput(request.input?.github);
 
     if (!repository) {
@@ -159,7 +159,7 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
   }
 
   private async mergePullRequest(request: ActionRequest): Promise<IntegrationResult> {
-    const repository = readString(request.input?.repository);
+    const repository = readRepositoryPath(request.input?.repository);
     const pullRequestInput = readMergePullRequestInput(request.input?.github);
 
     if (!repository) {
@@ -463,6 +463,34 @@ function readPullRequestState(value: unknown): "open" | "closed" | undefined {
 
 function readMergeMethod(value: unknown): "merge" | "squash" | "rebase" | undefined {
   return value === "merge" || value === "squash" || value === "rebase" ? value : undefined;
+}
+
+function readRepositoryPath(value: unknown): string | undefined {
+  const repository = readString(value);
+
+  if (!repository) {
+    return undefined;
+  }
+
+  const [owner, name, extra] = repository.split("/");
+
+  if (extra !== undefined || !owner || !name) {
+    return undefined;
+  }
+
+  if (!githubOwnerNameIsValid(owner) || !githubRepositoryNameIsValid(name)) {
+    return undefined;
+  }
+
+  return `${encodeURIComponent(owner)}/${encodeURIComponent(name)}`;
+}
+
+function githubOwnerNameIsValid(value: string): boolean {
+  return /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?$/.test(value);
+}
+
+function githubRepositoryNameIsValid(value: string): boolean {
+  return value !== "." && value !== ".." && /^[A-Za-z0-9._-]+$/.test(value);
 }
 
 function readString(value: unknown): string | undefined {
