@@ -838,6 +838,26 @@ describe("gateway app", () => {
       error: "approval_expired",
     });
     expect(githubRequests).toEqual([]);
+
+    const auditResponse = await secondApp.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+    const events = auditResponse.json().events;
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      action: "slack.approval.expired",
+      changedFiles: ["src/auth/session.ts"],
+      decision: "block",
+      payload: {
+        approvalId: approval.id,
+        status: "expired",
+      },
+      repository: "nodirumurkulov/AgentGate",
+      riskLevel: "high",
+      riskReasons: ["Approval callback token expired."],
+    });
   });
 
   it("rejects malformed Slack interaction payloads", async () => {

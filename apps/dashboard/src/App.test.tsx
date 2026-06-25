@@ -60,4 +60,27 @@ describe("App", () => {
 
     expect(newerAuditId.compareDocumentPosition(olderAuditId) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+
+  it("summarizes expired approval callback events", () => {
+    render(
+      <App
+        initialAuditEvents={[
+          {
+            action: "slack.approval.expired",
+            changedFiles: ["src/auth/session.ts"],
+            decision: "block",
+            id: "audit_expired",
+            repository: "nodirumurkulov/AgentGate",
+            riskLevel: "high",
+            riskReasons: ["Approval callback token expired."],
+            timestamp: "2026-06-25T00:00:00.000Z",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByText("Expired approvals")).toBeTruthy();
+    expect(screen.getByText("slack.approval.expired")).toBeTruthy();
+    expect(screen.getByText("Approval callback token expired.")).toBeTruthy();
+  });
 });
