@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { ApprovalRecord } from "@agentgate/core";
@@ -538,6 +538,60 @@ describe("gateway app", () => {
     });
   });
 
+  it("persists approval callback token hashes without storing raw callback tokens", async () => {
+    const env = {
+      AGENTGATE_STORE_PATH: createStorePath(),
+    };
+    const githubRequests: unknown[] = [];
+    const slackApprovals: ApprovalRecord[] = [];
+    const firstApp = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests, slackApprovals),
+      env,
+      slackSigningSecret,
+    });
+    const approval = await createPendingApproval(firstApp);
+    const callbackToken = requireCallbackToken(slackApprovals);
+    const storedApproval = readStoredApproval(env.AGENTGATE_STORE_PATH);
+
+    expect(storedApproval.callbackToken).toBeUndefined();
+    expect(storedApproval.callbackTokenHash).toEqual(expect.any(String));
+    expect(storedApproval.callbackTokenHash).not.toContain(callbackToken);
+
+    const secondApp = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests),
+      env,
+      slackSigningSecret,
+    });
+    const body = createSlackInteractionBody({
+      actions: [
+        {
+          action_id: "agentgate.approve",
+          value: `${approval.id}:${callbackToken}`,
+        },
+      ],
+      user: {
+        id: "U123",
+      },
+    });
+
+    const response = await secondApp.inject({
+      headers: {
+        ...signedSlackRawBodyHeaders(body),
+        "content-type": "application/x-www-form-urlencoded",
+      },
+      method: "POST",
+      payload: body,
+      url: "/v1/slack/interactions",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().approval).toMatchObject({
+      id: approval.id,
+      status: "approved",
+    });
+    expect(githubRequests).toHaveLength(1);
+  });
+
   it("denies a pending approval from a signed Slack callback", async () => {
     const app = createGatewayApp({ slackSigningSecret });
     const approval = await createPendingApproval(app);
@@ -887,6 +941,19 @@ function requireCallbackToken(approvals: ApprovalRecord[]): string {
   }
 
   return token;
+}
+
+function readStoredApproval(storePath: string): Record<string, string | undefined> {
+  const state = JSON.parse(readFileSync(storePath, "utf8")) as {
+    approvals?: Record<string, string | undefined>[];
+  };
+  const approval = state.approvals?.[0];
+
+  if (!approval) {
+    throw new Error("Expected approval to be persisted.");
+  }
+
+  return approval;
 }
 
 function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters {

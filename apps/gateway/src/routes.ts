@@ -10,7 +10,7 @@ import {
   type CodeChangeRisk,
   type PolicyDocument,
 } from "@agentgate/core";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
 import type { GatewayAdapters } from "./adapters/types";
 import { verifyGitHubSignature } from "./githubSignature";
@@ -118,7 +118,7 @@ export function registerRoutes(
         });
       }
 
-      store.appendApproval(approval);
+      store.appendApproval(toStoredApproval(approval));
 
       return reply.code(202).send({
         approval: toPublicApproval(approval),
@@ -315,7 +315,7 @@ type ApprovalCallbackResult = {
   execution?: Awaited<ReturnType<GatewayAdapters["github"]["execute"]>>;
 };
 
-type PublicApprovalRecord = Omit<ApprovalRecord, "callbackToken">;
+type PublicApprovalRecord = Omit<ApprovalRecord, "callbackToken" | "callbackTokenHash">;
 
 type ApprovalCallbackResponse = Omit<ApprovalCallbackResult, "approval"> & {
   approval: PublicApprovalRecord;
@@ -435,8 +435,16 @@ function toApprovalCallbackResponse(result: ApprovalCallbackResult): ApprovalCal
 function toPublicApproval(approval: ApprovalRecord): PublicApprovalRecord {
   const publicApproval = { ...approval };
   delete publicApproval.callbackToken;
+  delete publicApproval.callbackTokenHash;
 
   return publicApproval;
+}
+
+function toStoredApproval(approval: ApprovalRecord): ApprovalRecord {
+  const storedApproval = { ...approval };
+  delete storedApproval.callbackToken;
+
+  return storedApproval;
 }
 
 function createPendingApproval(
@@ -445,11 +453,13 @@ function createPendingApproval(
   risk: CodeChangeRisk,
 ): ApprovalRecord {
   const actionRequest = createActionRequest(body, risk.level);
+  const callbackToken = randomUUID();
 
   return {
     action: body.action,
     actionRequest,
-    callbackToken: randomUUID(),
+    callbackToken,
+    callbackTokenHash: hashApprovalCallbackToken(callbackToken),
     id: `approval_${store.listApprovals().length + 1}`,
     repository: body.repository,
     requestedAt: new Date().toISOString(),
@@ -467,7 +477,29 @@ function approvalTokenIsValid(
     return true;
   }
 
+  if (approval.callbackTokenHash) {
+    return approvalTokenHashMatches(approval.callbackTokenHash, callback.callbackToken);
+  }
+
   return approval.callbackToken === callback.callbackToken;
+}
+
+function hashApprovalCallbackToken(callbackToken: string): string {
+  return createHash("sha256").update(callbackToken).digest("hex");
+}
+
+function approvalTokenHashMatches(expectedHash: string, callbackToken: string): boolean {
+  const actualHash = hashApprovalCallbackToken(callbackToken);
+
+  if (!isSha256Hex(expectedHash)) {
+    return false;
+  }
+
+  return timingSafeEqual(Buffer.from(expectedHash, "hex"), Buffer.from(actualHash, "hex"));
+}
+
+function isSha256Hex(value: string): boolean {
+  return /^[a-f0-9]{64}$/.test(value);
 }
 
 function transitionApprovalFromCallback(
