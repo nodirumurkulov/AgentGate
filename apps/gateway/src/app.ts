@@ -24,6 +24,7 @@ export function createGatewayApp(options: GatewayAppOptions = {}) {
       ...(options.fetcher ? { fetcher: options.fetcher } : {}),
     });
   const store = options.store ?? createGatewayStore(options.env ?? process.env);
+  const approvalCallbackTokenTtlMs = readApprovalCallbackTokenTtlMs(options.env ?? process.env);
 
   server.removeContentTypeParser("application/json");
   server.addContentTypeParser(
@@ -51,6 +52,7 @@ export function createGatewayApp(options: GatewayAppOptions = {}) {
     adapters,
     options.slackSigningSecret ?? options.env?.SLACK_SIGNING_SECRET ?? "",
     options.env?.GITHUB_WEBHOOK_SECRET ?? process.env.GITHUB_WEBHOOK_SECRET ?? "",
+    approvalCallbackTokenTtlMs,
   );
 
   return server;
@@ -60,4 +62,16 @@ function createGatewayStore(env: Record<string, string | undefined>): GatewaySto
   const storePath = env.AGENTGATE_STORE_PATH?.trim();
 
   return storePath ? new JsonFileStore(storePath) : new MemoryStore();
+}
+
+function readApprovalCallbackTokenTtlMs(env: Record<string, string | undefined>): number {
+  const rawValue = env.AGENTGATE_APPROVAL_TOKEN_TTL_SECONDS?.trim();
+
+  if (!rawValue) {
+    return 15 * 60 * 1000;
+  }
+
+  const seconds = Number(rawValue);
+
+  return Number.isInteger(seconds) && seconds > 0 ? seconds * 1000 : 15 * 60 * 1000;
 }

@@ -67,7 +67,7 @@ const policy: PolicyDocument = {
   version: 1,
 };
 
-const approvalCallbackTokenTtlMs = 15 * 60 * 1000;
+const defaultApprovalCallbackTokenTtlMs = 15 * 60 * 1000;
 
 export function registerRoutes(
   server: FastifyInstance,
@@ -75,6 +75,7 @@ export function registerRoutes(
   adapters: GatewayAdapters,
   slackSigningSecret: string,
   githubWebhookSecret: string,
+  approvalCallbackTokenTtlMs = defaultApprovalCallbackTokenTtlMs,
 ): void {
   server.addContentTypeParser(
     "application/x-www-form-urlencoded",
@@ -109,7 +110,12 @@ export function registerRoutes(
     }
 
     if (result.decision.outcome === "approval_required") {
-      const approval = createPendingApproval(request.body, store, result.risk);
+      const approval = createPendingApproval(
+        request.body,
+        store,
+        result.risk,
+        approvalCallbackTokenTtlMs,
+      );
       const notification = await adapters.slack.notifyApprovalRequired(approval);
 
       if (!notification.ok) {
@@ -476,19 +482,21 @@ function createPendingApproval(
   body: CodeChangeActionBody,
   store: GatewayStore,
   risk: CodeChangeRisk,
+  callbackTokenTtlMs: number,
 ): ApprovalRecord {
   const actionRequest = createActionRequest(body, risk.level);
   const callbackToken = randomUUID();
+  const requestedAt = new Date();
 
   return {
     action: body.action,
     actionRequest,
     callbackToken,
-    callbackTokenExpiresAt: new Date(Date.now() + approvalCallbackTokenTtlMs).toISOString(),
+    callbackTokenExpiresAt: new Date(requestedAt.getTime() + callbackTokenTtlMs).toISOString(),
     callbackTokenHash: hashApprovalCallbackToken(callbackToken),
     id: `approval_${store.listApprovals().length + 1}`,
     repository: body.repository,
-    requestedAt: new Date().toISOString(),
+    requestedAt: requestedAt.toISOString(),
     riskLevel: risk.level,
     riskReasons: risk.reasons,
     status: "pending",

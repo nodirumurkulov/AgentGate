@@ -592,6 +592,28 @@ describe("gateway app", () => {
     expect(githubRequests).toHaveLength(1);
   });
 
+  it("uses the configured approval callback token TTL", async () => {
+    const env = {
+      AGENTGATE_APPROVAL_TOKEN_TTL_SECONDS: "1",
+      AGENTGATE_STORE_PATH: createStorePath(),
+    };
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters([]),
+      env,
+      slackSigningSecret,
+    });
+
+    await createPendingApproval(app);
+
+    const storedApproval = readStoredApproval(env.AGENTGATE_STORE_PATH);
+    const ttlMs =
+      Date.parse(requireStoredField(storedApproval, "callbackTokenExpiresAt")) -
+      Date.parse(requireStoredField(storedApproval, "requestedAt"));
+
+    expect(ttlMs).toBeGreaterThan(0);
+    expect(ttlMs).toBeLessThanOrEqual(1000);
+  });
+
   it("denies a pending approval from a signed Slack callback", async () => {
     const app = createGatewayApp({ slackSigningSecret });
     const approval = await createPendingApproval(app);
@@ -1006,6 +1028,16 @@ function readStoredApproval(storePath: string): Record<string, string | undefine
   }
 
   return approval;
+}
+
+function requireStoredField(approval: Record<string, string | undefined>, field: string): string {
+  const value = approval[field];
+
+  if (!value) {
+    throw new Error(`Expected stored approval field '${field}'.`);
+  }
+
+  return value;
 }
 
 function expireStoredApprovalCallbackToken(storePath: string): void {
