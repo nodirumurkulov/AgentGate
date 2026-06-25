@@ -508,6 +508,27 @@ describe("gateway app", () => {
         target: "risk:high",
       },
     ]);
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+    const events = auditResponse.json().events;
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      action: "slack.approval.approved",
+      changedFiles: ["src/auth/session.ts"],
+      decision: "allow",
+      payload: {
+        approvalId: approval.id,
+        decidedBy: "security-reviewer",
+        status: "approved",
+      },
+      repository: "nodirumurkulov/AgentGate",
+      riskLevel: "high",
+      riskReasons: ["Approval granted by reviewer."],
+    });
   });
 
   it("persists pending approvals when a store path is configured", async () => {
@@ -667,6 +688,27 @@ describe("gateway app", () => {
     });
     expect(response.json().execution).toBeUndefined();
     expect(githubRequests).toEqual([]);
+
+    const auditResponse = await app.inject({
+      method: "GET",
+      url: "/v1/audit",
+    });
+    const events = auditResponse.json().events;
+
+    expect(events).toHaveLength(2);
+    expect(events[1]).toMatchObject({
+      action: "slack.approval.denied",
+      changedFiles: ["src/auth/session.ts"],
+      decision: "block",
+      payload: {
+        approvalId: approval.id,
+        decidedBy: "security-reviewer",
+        status: "denied",
+      },
+      repository: "nodirumurkulov/AgentGate",
+      riskLevel: "high",
+      riskReasons: ["Approval denied by reviewer."],
+    });
   });
 
   it("approves a pending approval from a signed Slack interaction payload", async () => {
@@ -814,8 +856,21 @@ describe("gateway app", () => {
     });
     const events = auditResponse.json().events;
 
-    expect(events).toHaveLength(2);
+    expect(events).toHaveLength(3);
     expect(events[1]).toMatchObject({
+      action: "slack.approval.approved",
+      changedFiles: ["src/auth/session.ts"],
+      decision: "allow",
+      payload: {
+        approvalId: approval.id,
+        decidedBy: "U123",
+        status: "approved",
+      },
+      repository: "nodirumurkulov/AgentGate",
+      riskLevel: "high",
+      riskReasons: ["Approval granted by reviewer."],
+    });
+    expect(events[2]).toMatchObject({
       action: "slack.approval.replayed",
       changedFiles: ["src/auth/session.ts"],
       decision: "block",

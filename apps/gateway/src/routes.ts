@@ -264,6 +264,7 @@ export function registerRoutes(
     const responseBody = toApprovalCallbackResponse(result);
 
     store.replaceApproval(result.approval);
+    appendApprovalCallbackAuditEvent(store, result.approval, approvalCallbackAuditOutcome(result.approval));
 
     if (result.execution && !result.execution.ok) {
       return reply.code(502).send(responseBody);
@@ -335,6 +336,7 @@ export function registerRoutes(
     const responseBody = toApprovalCallbackResponse(result);
 
     store.replaceApproval(result.approval);
+    appendApprovalCallbackAuditEvent(store, result.approval, approvalCallbackAuditOutcome(result.approval));
 
     if (result.execution && !result.execution.ok) {
       return reply.code(502).send(responseBody);
@@ -351,7 +353,7 @@ interface GitHubWebhookAuditInput {
   store: GatewayStore;
 }
 
-type ApprovalCallbackAuditOutcome = "expired" | "invalid_token" | "replayed";
+type ApprovalCallbackAuditOutcome = "approved" | "denied" | "expired" | "invalid_token" | "replayed";
 
 type ApprovalCallbackResult = {
   approval: ApprovalRecord;
@@ -468,10 +470,11 @@ function appendApprovalCallbackAuditEvent(
   const event = createAuditEvent({
     action: `slack.approval.${outcome}`,
     changedFiles: readApprovalChangedFiles(approval),
-    decision: "block",
+    decision: approvalCallbackAuditDecision(outcome),
     id: `audit_${sequence}`,
     payload: {
       approvalId: approval.id,
+      ...(approval.decidedBy ? { decidedBy: approval.decidedBy } : {}),
       status: approval.status,
     },
     previousHash: previousEvent?.hash ?? "genesis",
@@ -487,7 +490,25 @@ function appendApprovalCallbackAuditEvent(
   return event;
 }
 
+function approvalCallbackAuditDecision(
+  outcome: ApprovalCallbackAuditOutcome,
+): AuditEvent["decision"] {
+  return outcome === "approved" ? "allow" : "block";
+}
+
+function approvalCallbackAuditOutcome(approval: ApprovalRecord): ApprovalCallbackAuditOutcome {
+  return approval.status === "approved" ? "approved" : "denied";
+}
+
 function approvalCallbackAuditReason(outcome: ApprovalCallbackAuditOutcome): string {
+  if (outcome === "approved") {
+    return "Approval granted by reviewer.";
+  }
+
+  if (outcome === "denied") {
+    return "Approval denied by reviewer.";
+  }
+
   if (outcome === "invalid_token") {
     return "Invalid approval callback token.";
   }
