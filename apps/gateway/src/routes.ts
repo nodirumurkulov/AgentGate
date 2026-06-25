@@ -234,10 +234,14 @@ export function registerRoutes(
     }
 
     if (!approvalTokenIsValid(approval, callback)) {
+      appendApprovalCallbackAuditEvent(store, approval, "invalid_token");
+
       return reply.code(401).send({ error: "invalid_approval_token" });
     }
 
     if (approval.status !== "pending") {
+      appendApprovalCallbackAuditEvent(store, approval, "replayed");
+
       return reply.code(409).send({
         approval: toPublicApproval(approval),
         error: "approval_already_decided",
@@ -301,10 +305,14 @@ export function registerRoutes(
     }
 
     if (!approvalTokenIsValid(approval, callback)) {
+      appendApprovalCallbackAuditEvent(store, approval, "invalid_token");
+
       return reply.code(401).send({ error: "invalid_approval_token" });
     }
 
     if (approval.status !== "pending") {
+      appendApprovalCallbackAuditEvent(store, approval, "replayed");
+
       return reply.code(409).send({
         approval: toPublicApproval(approval),
         error: "approval_already_decided",
@@ -343,7 +351,7 @@ interface GitHubWebhookAuditInput {
   store: GatewayStore;
 }
 
-type ApprovalCallbackAuditOutcome = "expired";
+type ApprovalCallbackAuditOutcome = "expired" | "invalid_token" | "replayed";
 
 type ApprovalCallbackResult = {
   approval: ApprovalRecord;
@@ -468,15 +476,27 @@ function appendApprovalCallbackAuditEvent(
     },
     previousHash: previousEvent?.hash ?? "genesis",
     repository: approval.repository,
-    requestId: `approval_${approval.id}_${outcome}`,
+    requestId: `approval_${approval.id}_${outcome}_${sequence}`,
     riskLevel: approval.riskLevel,
-    riskReasons: ["Approval callback token expired."],
+    riskReasons: [approvalCallbackAuditReason(outcome)],
     timestamp: new Date().toISOString(),
   });
 
   store.appendAuditEvent(event);
 
   return event;
+}
+
+function approvalCallbackAuditReason(outcome: ApprovalCallbackAuditOutcome): string {
+  if (outcome === "invalid_token") {
+    return "Invalid approval callback token.";
+  }
+
+  if (outcome === "replayed") {
+    return "Approval callback was already decided.";
+  }
+
+  return "Approval callback token expired.";
 }
 
 function readApprovalChangedFiles(approval: ApprovalRecord): string[] {
@@ -665,6 +685,9 @@ function parseSlackApprovalCallback(value: unknown): SlackApprovalCallbackBody |
 
   return {
     approvalId,
+    ...(typeof value.callbackToken === "string" && value.callbackToken.trim()
+      ? { callbackToken: value.callbackToken.trim() }
+      : {}),
     decidedBy,
     decision,
     ...(typeof value.reason === "string" && value.reason.trim()
