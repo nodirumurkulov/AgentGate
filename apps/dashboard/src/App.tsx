@@ -1,12 +1,49 @@
-import type { DashboardAuditEvent } from "./api";
+import { useEffect, useState } from "react";
+import { fetchAuditEvents, type DashboardAuditEvent } from "./api";
 
 interface AppProps {
   initialAuditEvents?: DashboardAuditEvent[];
+  loadAuditEvents?: () => Promise<DashboardAuditEvent[]>;
+  pollIntervalMs?: number;
 }
 
-export function App({ initialAuditEvents = [] }: AppProps) {
-  const decisionCounts = countDecisions(initialAuditEvents);
-  const sortedAuditEvents = sortAuditEventsNewestFirst(initialAuditEvents);
+const defaultPollIntervalMs = 10_000;
+
+export function App({
+  initialAuditEvents = [],
+  loadAuditEvents = fetchAuditEvents,
+  pollIntervalMs = defaultPollIntervalMs,
+}: AppProps) {
+  const [auditEvents, setAuditEvents] = useState(initialAuditEvents);
+  const decisionCounts = countDecisions(auditEvents);
+  const sortedAuditEvents = sortAuditEventsNewestFirst(auditEvents);
+
+  useEffect(() => {
+    let mounted = true;
+
+    async function refreshAuditEvents() {
+      try {
+        const events = await loadAuditEvents();
+
+        if (mounted) {
+          setAuditEvents(events);
+        }
+      } catch {
+        // Keep the last known audit view when the gateway is temporarily unavailable.
+      }
+    }
+
+    void refreshAuditEvents();
+
+    const intervalId = window.setInterval(() => {
+      void refreshAuditEvents();
+    }, pollIntervalMs);
+
+    return () => {
+      mounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [loadAuditEvents, pollIntervalMs]);
 
   return (
     <main className="shell">
@@ -36,7 +73,7 @@ export function App({ initialAuditEvents = [] }: AppProps) {
           <p>Read-only audit evidence for pull request risk decisions.</p>
         </div>
 
-        {initialAuditEvents.length === 0 ? (
+        {auditEvents.length === 0 ? (
           <p className="empty-state">Pull request risk decisions will appear here once the API is connected.</p>
         ) : (
           <div className="decision-list">

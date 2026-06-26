@@ -1,11 +1,26 @@
 // @vitest-environment jsdom
 
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { act, render, screen } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { App } from "./App";
 import type { DashboardAuditEvent } from "./api";
 
+const liveAuditEvent: DashboardAuditEvent = {
+  action: "pull_requests.create",
+  changedFiles: ["README.md"],
+  decision: "allow",
+  id: "audit_live",
+  repository: "nodirumurkulov/AgentGate",
+  riskLevel: "low",
+  riskReasons: ["Documentation-only change."],
+  timestamp: "2026-06-26T00:00:00.000Z",
+};
+
 describe("App", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("renders blocked code-change audit evidence", () => {
     render(
       <App
@@ -134,5 +149,26 @@ describe("App", () => {
     expect(screen.getByText("Approval callback token expired.")).toBeTruthy();
     expect(screen.getByText("Invalid approval callback token.")).toBeTruthy();
     expect(screen.getByText("Approval callback was already decided.")).toBeTruthy();
+  });
+
+  it("polls audit events after initial render", async () => {
+    vi.useFakeTimers();
+    const loadAuditEvents = vi.fn().mockResolvedValue([liveAuditEvent]);
+
+    render(<App loadAuditEvents={loadAuditEvents} pollIntervalMs={1000} />);
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+
+    expect(screen.getByText("audit_live")).toBeTruthy();
+    expect(loadAuditEvents).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      vi.advanceTimersByTime(1000);
+      await Promise.resolve();
+    });
+
+    expect(loadAuditEvents).toHaveBeenCalledTimes(2);
   });
 });
