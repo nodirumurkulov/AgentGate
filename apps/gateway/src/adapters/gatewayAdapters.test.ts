@@ -141,4 +141,70 @@ describe("createGatewayAdapters", () => {
       title: "AgentGate smoke test",
     });
   });
+
+  it("passes the configured GitHub status context to the real adapter", async () => {
+    const requests: string[] = [];
+    const adapters = createGatewayAdapters({
+      env: {
+        AGENTGATE_ADAPTER_MODE: "real",
+        AGENTGATE_GITHUB_STATUS_CONTEXT: "agentgate/custom",
+        AGENTGATE_PUBLIC_URL: "https://agentgate.example.test",
+        GITHUB_API_BASE_URL: "https://api.github.test",
+        GITHUB_APP_ID: "12345",
+        GITHUB_INSTALLATION_ID: "999",
+        GITHUB_APP_PRIVATE_KEY_PATH: ".secrets/agentgate-test.pem",
+        SLACK_APPROVAL_CHANNEL_ID: "C123",
+        SLACK_BOT_TOKEN: "xoxb-test-token",
+      },
+      fetcher: async (url) => {
+        const requestUrl = String(url);
+        requests.push(requestUrl);
+
+        if (requestUrl.endsWith("/access_tokens")) {
+          return Response.json({
+            token: "installation-token",
+          });
+        }
+
+        if (requestUrl.endsWith("/commits/abc123/status")) {
+          return Response.json({
+            statuses: [
+              {
+                context: "agentgate/custom",
+                state: "success",
+              },
+            ],
+          });
+        }
+
+        return Response.json({
+          merged: true,
+          message: "Pull Request successfully merged",
+          sha: "merge-sha",
+        });
+      },
+      readTextFile: () => privateKeyPem,
+    });
+
+    const result = await adapters.github.execute({
+      action: "pull_requests.merge",
+      agentId: "coding-agent",
+      input: {
+        github: {
+          expectedHeadSha: "abc123",
+          pullNumber: 7,
+        },
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+      integration: "github",
+      target: "risk:high",
+    });
+
+    expect(result.ok).toBe(true);
+    expect(requests).toEqual([
+      "https://api.github.test/app/installations/999/access_tokens",
+      "https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/commits/abc123/status",
+      "https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/pulls/7/merge",
+    ]);
+  });
 });
