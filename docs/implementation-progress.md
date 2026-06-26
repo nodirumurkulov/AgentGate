@@ -42,21 +42,21 @@ Recent security hardening merged into `main`:
 - PR #29 converts real GitHub and Slack adapter exceptions into sanitized `ok: false` integration results.
 - PR #30 validates GitHub repository input as a strict `owner/repo` path before token retrieval or network calls.
 - PR #31 requires callback tokens for approvals that have stored token material, closing the signed JSON callback bypass.
+- PR #32 adds dashboard polling from `/v1/audit` and introduces this progress document.
 
 Current implementation slice:
 
-- Add dashboard polling from `/v1/audit` so the read-only dashboard can refresh real gateway audit history after initial render.
-- Keep polling behavior injectable in tests, so unit tests do not make network calls.
-- Keep the UI simple: no new charts, filters, or complex state in this slice.
+- Add an MCP JSON-RPC boundary around the existing guarded tool handler.
+- Support `initialize`, `tools/list`, and `tools/call` without adding a new runtime dependency.
+- Keep the stdio-facing message handling small and testable by parsing one line-delimited JSON-RPC message at a time.
 
 ## What We Are Going To Do Next
 
 The next steps should continue in small reviewable PRs:
 
-1. Finish and merge dashboard audit polling.
-2. Add an MCP stdio server around the existing guarded tool handler.
-3. Add GitHub status-check enforcement before merge execution, so merge actions can require a known passing AgentGate decision.
-4. Run a live sandbox smoke test with real GitHub App and Slack credentials, using only local `.env` or shell secrets.
-5. Use the smoke-test result to decide whether update and merge should stay enabled in real adapters or be narrowed until status-check enforcement is complete.
+1. Finish and merge the MCP stdio handler slice.
+2. Add GitHub status-check enforcement before merge execution, so merge actions can require a known passing AgentGate decision.
+3. Run a live sandbox smoke test with real GitHub App and Slack credentials, using only local `.env` or shell secrets.
+4. Use the smoke-test result to decide whether update and merge should stay enabled in real adapters or be narrowed until status-check enforcement is complete.
 
 The final goal is a clean MVP path where an AI coding agent calls AgentGate before GitHub repository-changing actions, AgentGate classifies risk and enforces policy, Slack reviewers approve high-risk changes, and maintainers can inspect a durable audit trail without exposing secrets.
