@@ -3,6 +3,63 @@ import { describe, expect, it } from "vitest";
 import { GitHubPullRequestAdapter } from "./githubAdapter";
 
 describe("GitHubPullRequestAdapter", () => {
+  it("publishes a successful AgentGate commit status", async () => {
+    const requests: Array<{ body: unknown; headers: Headers; method: string; url: string }> = [];
+    const adapter = new GitHubPullRequestAdapter({
+      apiBaseUrl: "https://api.github.test",
+      fetcher: async (url, init) => {
+        requests.push({
+          body: JSON.parse(String(init?.body)),
+          headers: new Headers(init?.headers),
+          method: init?.method ?? "GET",
+          url: String(url),
+        });
+
+        return Response.json({
+          context: "agentgate/authorization",
+          state: "success",
+          target_url: "https://agentgate.example.test/audit/audit_1",
+          url: "https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/statuses/abc123",
+        });
+      },
+      tokenProvider: async () => "installation-token",
+    });
+
+    const result = await adapter.publishAgentGateStatus({
+      description: "AgentGate authorized this repository change.",
+      headSha: "abc123",
+      repository: "nodirumurkulov/agentgate-sandbox",
+      state: "success",
+      targetUrl: "https://agentgate.example.test/audit/audit_1",
+    });
+
+    expect(requests).toHaveLength(1);
+    const request = requests[0];
+
+    if (!request) {
+      throw new Error("Expected one GitHub status request.");
+    }
+
+    expect(request.url).toBe("https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/statuses/abc123");
+    expect(request.method).toBe("POST");
+    expect(request.headers.get("authorization")).toBe("Bearer installation-token");
+    expect(request.body).toEqual({
+      context: "agentgate/authorization",
+      description: "AgentGate authorized this repository change.",
+      state: "success",
+      target_url: "https://agentgate.example.test/audit/audit_1",
+    });
+    expect(result).toEqual({
+      data: {
+        context: "agentgate/authorization",
+        state: "success",
+        targetUrl: "https://agentgate.example.test/audit/audit_1",
+      },
+      externalRequestId: "https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/statuses/abc123",
+      ok: true,
+    });
+  });
+
   it("creates a pull request with a GitHub App installation token", async () => {
     const requests: Array<{ body: unknown; headers: Headers; method: string; url: string }> = [];
     const adapter = new GitHubPullRequestAdapter({

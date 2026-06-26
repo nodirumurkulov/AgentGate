@@ -1,5 +1,6 @@
 import type { ActionRequest } from "@agentgate/core";
-import type { IntegrationAdapter, IntegrationResult } from "@agentgate/integrations";
+import type { IntegrationResult } from "@agentgate/integrations";
+import type { AgentGateCommitStatus, GitHubAdapter } from "./types";
 
 interface GitHubPullRequestAdapterOptions {
   apiBaseUrl?: string;
@@ -39,6 +40,8 @@ interface GitHubMergePullRequestResponse {
 interface GitHubCommitStatus {
   context?: unknown;
   state?: unknown;
+  target_url?: unknown;
+  url?: unknown;
 }
 
 interface GitHubCombinedStatusResponse {
@@ -57,7 +60,7 @@ interface GitHubUpdatePullRequestInput {
 const githubApiVersion = "2022-11-28";
 const defaultRequiredStatusContext = "agentgate/authorization";
 
-export class GitHubPullRequestAdapter implements IntegrationAdapter {
+export class GitHubPullRequestAdapter implements GitHubAdapter {
   integration = "github";
 
   private readonly apiBaseUrl: string;
@@ -71,6 +74,38 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
     this.requiredStatusContext =
       options.requiredStatusContext?.trim() || defaultRequiredStatusContext;
     this.tokenProvider = options.tokenProvider;
+  }
+
+  async publishAgentGateStatus(status: AgentGateCommitStatus): Promise<IntegrationResult> {
+    try {
+      const repository = readRepositoryPath(status.repository);
+      const headSha = readString(status.headSha);
+
+      if (!repository || !headSha) {
+        return {
+          data: {
+            error: "missing_github_commit_status_input",
+            fields: [...(repository ? [] : ["repository"]), ...(headSha ? [] : ["headSha"])],
+          },
+          ok: false,
+        };
+      }
+
+      const token = await this.tokenProvider();
+      const response = await this.fetcher(
+        `${this.apiBaseUrl}/repos/${repository}/statuses/${headSha}`,
+        {
+          body: JSON.stringify(toGitHubStatusBody(status, this.requiredStatusContext)),
+          headers: createGitHubHeaders(token),
+          method: "POST",
+        },
+      );
+      const payload = (await response.json()) as GitHubCommitStatus;
+
+      return toCommitStatusResult(response, payload, this.requiredStatusContext, status.state);
+    } catch {
+      return githubRequestFailure("github_commit_status_failed");
+    }
   }
 
   async execute(request: ActionRequest): Promise<IntegrationResult> {
@@ -264,6 +299,27 @@ function githubRequestErrorForAction(action: string): string {
   return "github_create_pull_request_failed";
 }
 
+function toCommitStatusResult(
+  response: Response,
+  payload: GitHubCommitStatus,
+  context: string,
+  state: AgentGateCommitStatus["state"],
+): IntegrationResult {
+  if (!response.ok) {
+    return githubRequestFailure("github_commit_status_failed");
+  }
+
+  return {
+    data: {
+      context: typeof payload.context === "string" ? payload.context : context,
+      state: typeof payload.state === "string" ? payload.state : state,
+      ...(typeof payload.target_url === "string" ? { targetUrl: payload.target_url } : {}),
+    },
+    ...(typeof payload.url === "string" ? { externalRequestId: payload.url } : {}),
+    ok: true,
+  };
+}
+
 function githubMergeStatusCheckFailure(context: string): IntegrationResult {
   return {
     data: {
@@ -371,6 +427,15 @@ function toGitHubMergePullRequestBody(input: GitHubMergePullRequestInput) {
     ...(input.commitTitle ? { commit_title: input.commitTitle } : {}),
     ...(input.mergeMethod ? { merge_method: input.mergeMethod } : {}),
     sha: input.expectedHeadSha,
+  };
+}
+
+function toGitHubStatusBody(input: AgentGateCommitStatus, context: string) {
+  return {
+    context,
+    description: input.description,
+    state: input.state,
+    ...(input.targetUrl ? { target_url: input.targetUrl } : {}),
   };
 }
 

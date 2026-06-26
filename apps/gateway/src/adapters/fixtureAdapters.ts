@@ -1,10 +1,9 @@
 import type { ActionRequest, ApprovalRecord } from "@agentgate/core";
 import type {
   ApprovalNotificationAdapter,
-  IntegrationAdapter,
   IntegrationResult,
 } from "@agentgate/integrations";
-import type { GatewayAdapters } from "./types";
+import type { AgentGateCommitStatus, GatewayAdapters, GitHubAdapter } from "./types";
 
 const pullRequestActions = [
   "pull_requests.create",
@@ -19,7 +18,7 @@ export function createFixtureAdapters(): GatewayAdapters {
   };
 }
 
-class FixtureGitHubAdapter implements IntegrationAdapter {
+class FixtureGitHubAdapter implements GitHubAdapter {
   integration = "github";
 
   async execute(request: ActionRequest): Promise<IntegrationResult> {
@@ -39,6 +38,18 @@ class FixtureGitHubAdapter implements IntegrationAdapter {
         repository: request.input?.repository,
       },
       externalRequestId: `fixture_github_${request.action}`,
+      ok: true,
+    };
+  }
+
+  async publishAgentGateStatus(status: AgentGateCommitStatus): Promise<IntegrationResult> {
+    return {
+      data: {
+        headSha: status.headSha,
+        repository: status.repository,
+        state: status.state,
+      },
+      externalRequestId: `fixture_github_status_${status.headSha}`,
       ok: true,
     };
   }

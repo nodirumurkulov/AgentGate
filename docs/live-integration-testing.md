@@ -17,7 +17,7 @@ This runbook verifies the opt-in real adapter path with a GitHub sandbox reposit
    - Metadata: read-only
    - Pull requests: read and write
    - Contents: read-only
-   - Commit statuses: read-only
+   - Commit statuses: read and write
 3. Install the app on the sandbox repository only.
 4. Generate a private key and save it locally:
 
@@ -83,7 +83,10 @@ printf "\nAgentGate smoke test\n" >> README.md
 git add README.md
 git commit -m "test: prepare agentgate smoke branch"
 git push -u origin agentgate-smoke
+git rev-parse HEAD
 ```
+
+Use the printed commit SHA as `AGENTGATE_LIVE_PR_HEAD_SHA` when you want the smoke run to publish the AgentGate authorization status.
 
 ## Run The Smoke Script
 
@@ -95,6 +98,7 @@ AGENTGATE_BASE_URL=http://localhost:4010 \
 AGENTGATE_LIVE_REPOSITORY=<owner>/<sandbox-repo> \
 AGENTGATE_LIVE_PR_BASE=main \
 AGENTGATE_LIVE_PR_HEAD=agentgate-smoke \
+AGENTGATE_LIVE_PR_HEAD_SHA=<agentgate-smoke-head-sha> \
 AGENTGATE_LIVE_PR_TITLE="AgentGate smoke test" \
 npm run smoke:live -w @agentgate/demo-agent
 ```
