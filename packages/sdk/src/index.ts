@@ -29,6 +29,7 @@ export interface GitHubCreatePullRequestInput {
   body?: string;
   draft?: boolean;
   head: string;
+  headSha?: string;
   maintainerCanModify?: boolean;
   title: string;
 }
@@ -44,6 +45,7 @@ export interface GitHubMergePullRequestInput {
 export interface GitHubUpdatePullRequestInput {
   base?: string;
   body?: string;
+  headSha?: string;
   maintainerCanModify?: boolean;
   pullNumber: number;
   state?: "open" | "closed";

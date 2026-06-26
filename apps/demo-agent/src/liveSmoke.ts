@@ -6,6 +6,7 @@ interface LiveSmokePullRequestConfig {
   base: string;
   body: string;
   head: string;
+  headSha?: string;
   title: string;
 }
 
@@ -43,6 +44,7 @@ export function readLiveSmokeConfig(env: LiveSmokeEnv): LiveSmokeConfig {
       base: readRequiredEnv(env, "AGENTGATE_LIVE_PR_BASE"),
       body: env.AGENTGATE_LIVE_PR_BODY ?? "Created by AgentGate live smoke testing.",
       head: readRequiredEnv(env, "AGENTGATE_LIVE_PR_HEAD"),
+      ...(env.AGENTGATE_LIVE_PR_HEAD_SHA ? { headSha: env.AGENTGATE_LIVE_PR_HEAD_SHA } : {}),
       title: readRequiredEnv(env, "AGENTGATE_LIVE_PR_TITLE"),
     },
     repository: readRequiredEnv(env, "AGENTGATE_LIVE_REPOSITORY"),
@@ -76,6 +78,7 @@ function buildPullRequestInput(config: LiveSmokePullRequestConfig): GitHubPullRe
     body: config.body,
     draft: true,
     head: config.head,
+    ...(config.headSha ? { headSha: config.headSha } : {}),
     maintainerCanModify: false,
     title: config.title,
   };

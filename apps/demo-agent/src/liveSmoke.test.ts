@@ -36,6 +36,21 @@ describe("readLiveSmokeConfig", () => {
       repository: "nodirumurkulov/agentgate-sandbox",
     });
   });
+
+  it("reads an optional pull request head SHA for status publishing", () => {
+    expect(
+      readLiveSmokeConfig({
+        AGENTGATE_ENABLE_LIVE_TESTS: "true",
+        AGENTGATE_LIVE_PR_BASE: "main",
+        AGENTGATE_LIVE_PR_HEAD: "agentgate-smoke",
+        AGENTGATE_LIVE_PR_HEAD_SHA: "abc123",
+        AGENTGATE_LIVE_PR_TITLE: "AgentGate smoke test",
+        AGENTGATE_LIVE_REPOSITORY: "nodirumurkulov/agentgate-sandbox",
+      }).pullRequest,
+    ).toMatchObject({
+      headSha: "abc123",
+    });
+  });
 });
 
 describe("buildLiveSmokeRequest", () => {
@@ -49,6 +64,7 @@ describe("buildLiveSmokeRequest", () => {
           base: "main",
           body: "Created by smoke testing.",
           head: "agentgate-smoke",
+          headSha: "abc123",
           title: "AgentGate smoke test",
         },
         repository: "nodirumurkulov/agentgate-sandbox",
@@ -62,6 +78,7 @@ describe("buildLiveSmokeRequest", () => {
         body: "Created by smoke testing.",
         draft: true,
         head: "agentgate-smoke",
+        headSha: "abc123",
         maintainerCanModify: false,
         title: "AgentGate smoke test",
       },

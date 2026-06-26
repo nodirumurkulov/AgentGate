@@ -312,6 +312,50 @@ describe("gateway app", () => {
     ]);
   });
 
+  it("publishes a passing status after allowed GitHub execution with a head SHA", async () => {
+    const githubRequests: unknown[] = [];
+    const statusUpdates: unknown[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests, [], statusUpdates),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "pull_requests.create",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        github: {
+          base: "main",
+          head: "agentgate-smoke",
+          headSha: "abc123",
+          title: "AgentGate smoke test",
+        },
+        integration: "github",
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      execution: {
+        ok: true,
+      },
+      statusUpdate: {
+        ok: true,
+      },
+    });
+    expect(statusUpdates).toEqual([
+      {
+        description: "AgentGate authorized this repository change.",
+        headSha: "abc123",
+        repository: "nodirumurkulov/agentgate-sandbox",
+        state: "success",
+      },
+    ]);
+  });
+
   it("fails closed when allowed GitHub execution fails", async () => {
     const app = createGatewayApp({
       adapters: createFailingGitHubAdapters(),
@@ -341,6 +385,45 @@ describe("gateway app", () => {
         ok: false,
       },
     });
+  });
+
+  it("fails closed when status publication fails after allowed GitHub execution", async () => {
+    const githubExecutions: string[] = [];
+    const app = createGatewayApp({
+      adapters: createFailingStatusAdapters(githubExecutions),
+    });
+
+    const response = await app.inject({
+      method: "POST",
+      payload: {
+        action: "pull_requests.create",
+        agentId: "coding-agent",
+        changedFiles: ["README.md"],
+        github: {
+          base: "main",
+          head: "agentgate-smoke",
+          headSha: "abc123",
+          title: "AgentGate smoke test",
+        },
+        integration: "github",
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+      url: "/v1/actions/execute",
+    });
+
+    expect(response.statusCode).toBe(502);
+    expect(response.json()).toMatchObject({
+      execution: {
+        ok: true,
+      },
+      statusUpdate: {
+        data: {
+          error: "github_commit_status_failed",
+        },
+        ok: false,
+      },
+    });
+    expect(githubExecutions).toEqual(["pull_requests.create"]);
   });
 
   it("creates a pending approval for high-risk pull request actions", async () => {
@@ -538,6 +621,59 @@ describe("gateway app", () => {
       riskLevel: "high",
       riskReasons: ["Approval granted by reviewer."],
     });
+  });
+
+  it("publishes a passing status after an approved GitHub action executes", async () => {
+    const githubRequests: unknown[] = [];
+    const slackApprovals: ApprovalRecord[] = [];
+    const statusUpdates: unknown[] = [];
+    const app = createGatewayApp({
+      adapters: createRecordingAdapters(githubRequests, slackApprovals, statusUpdates),
+      slackSigningSecret,
+    });
+    const approval = await createPendingApproval(app, {
+      github: {
+        headSha: "abc123",
+        pullNumber: 7,
+        title: "Approved auth update",
+      },
+    });
+    const callbackToken = requireCallbackToken(slackApprovals);
+    const payload = {
+      approvalId: approval.id,
+      callbackToken,
+      decidedBy: "security-reviewer",
+      decision: "approve",
+    };
+
+    const response = await app.inject({
+      headers: signedSlackHeaders(payload),
+      method: "POST",
+      payload,
+      url: "/v1/slack/approvals",
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({
+      approval: {
+        id: approval.id,
+        status: "approved",
+      },
+      execution: {
+        ok: true,
+      },
+      statusUpdate: {
+        ok: true,
+      },
+    });
+    expect(statusUpdates).toEqual([
+      {
+        description: "AgentGate authorized this repository change.",
+        headSha: "abc123",
+        repository: "nodirumurkulov/AgentGate",
+        state: "success",
+      },
+    ]);
   });
 
   it("persists pending approvals when a store path is configured", async () => {
@@ -1234,6 +1370,14 @@ function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters
           ok: true,
         };
       },
+      async publishAgentGateStatus(status) {
+        return {
+          data: {
+            state: status.state,
+          },
+          ok: true,
+        };
+      },
     },
     slack: {
       integration: "slack",
@@ -1249,9 +1393,45 @@ function createFailingSlackAdapters(githubExecutions: string[]): GatewayAdapters
   };
 }
 
+function createFailingStatusAdapters(githubExecutions: string[]): GatewayAdapters {
+  return {
+    github: {
+      integration: "github",
+      async execute(request) {
+        githubExecutions.push(request.action);
+
+        return {
+          data: {
+            action: request.action,
+          },
+          ok: true,
+        };
+      },
+      async publishAgentGateStatus() {
+        return {
+          data: {
+            error: "github_commit_status_failed",
+          },
+          ok: false,
+        };
+      },
+    },
+    slack: {
+      integration: "slack",
+      async notifyApprovalRequired() {
+        return {
+          data: {},
+          ok: true,
+        };
+      },
+    },
+  };
+}
+
 function createRecordingAdapters(
   githubRequests: unknown[],
   slackApprovals: ApprovalRecord[] = [],
+  statusUpdates: unknown[] = [],
 ): GatewayAdapters {
   return {
     github: {
@@ -1267,6 +1447,17 @@ function createRecordingAdapters(
         return {
           data: {
             action: request.action,
+          },
+          ok: true,
+        };
+      },
+      async publishAgentGateStatus(status) {
+        statusUpdates.push(status);
+
+        return {
+          data: {
+            context: "agentgate/authorization",
+            state: status.state,
           },
           ok: true,
         };
@@ -1300,6 +1491,14 @@ function createCapturingGitHubAdapters(githubInputs: unknown[]): GatewayAdapters
           ok: true,
         };
       },
+      async publishAgentGateStatus(status) {
+        return {
+          data: {
+            state: status.state,
+          },
+          ok: true,
+        };
+      },
     },
     slack: {
       integration: "slack",
@@ -1321,6 +1520,14 @@ function createFailingGitHubAdapters(): GatewayAdapters {
         return {
           data: {
             error: "github_create_pull_request_failed",
+          },
+          ok: false,
+        };
+      },
+      async publishAgentGateStatus() {
+        return {
+          data: {
+            error: "github_commit_status_failed",
           },
           ok: false,
         };

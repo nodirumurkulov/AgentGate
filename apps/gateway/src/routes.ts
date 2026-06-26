@@ -13,7 +13,8 @@ import {
 } from "@agentgate/core";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import type { FastifyInstance } from "fastify";
-import type { GatewayAdapters } from "./adapters/types";
+import type { IntegrationResult } from "@agentgate/integrations";
+import type { AgentGateCommitStatus, GatewayAdapters } from "./adapters/types";
 import { verifyGitHubSignature } from "./githubSignature";
 import { verifySlackSignature } from "./slackSignature";
 import type { GatewayStore } from "./stores/types";
@@ -148,11 +149,24 @@ export function registerRoutes(
       });
     }
 
+    const statusUpdate = await publishSuccessfulAgentGateStatus(result.actionRequest, adapters);
+
+    if (statusUpdate && !statusUpdate.ok) {
+      return reply.code(502).send({
+        auditEventId: result.auditEvent.id,
+        decision: result.decision,
+        execution,
+        risk: result.risk,
+        statusUpdate,
+      });
+    }
+
     return {
       auditEventId: result.auditEvent.id,
       decision: result.decision,
       execution,
       risk: result.risk,
+      ...(statusUpdate ? { statusUpdate } : {}),
     };
   });
 
@@ -266,7 +280,9 @@ export function registerRoutes(
     store.replaceApproval(result.approval);
     appendApprovalCallbackAuditEvent(store, result.approval, approvalCallbackAuditOutcome(result.approval));
 
-    if (result.execution && !result.execution.ok) {
+    const statusUpdateFailed = result.statusUpdate && !result.statusUpdate.ok;
+
+    if ((result.execution && !result.execution.ok) || statusUpdateFailed) {
       return reply.code(502).send(responseBody);
     }
 
@@ -358,6 +374,7 @@ type ApprovalCallbackAuditOutcome = "approved" | "denied" | "expired" | "invalid
 type ApprovalCallbackResult = {
   approval: ApprovalRecord;
   execution?: Awaited<ReturnType<GatewayAdapters["github"]["execute"]>>;
+  statusUpdate?: IntegrationResult;
 };
 
 type PublicApprovalRecord = Omit<ApprovalRecord, "callbackToken" | "callbackTokenHash">;
@@ -667,11 +684,50 @@ async function executeApprovedAction(
   }
 
   const execution = await adapters.github.execute(approval.actionRequest);
+  const statusUpdate = execution.ok
+    ? await publishSuccessfulAgentGateStatus(approval.actionRequest, adapters)
+    : undefined;
 
   return {
     approval,
     execution,
+    ...(statusUpdate ? { statusUpdate } : {}),
   };
+}
+
+function publishSuccessfulAgentGateStatus(
+  request: ActionRequest,
+  adapters: GatewayAdapters,
+): Promise<IntegrationResult | undefined> {
+  const status = createSuccessfulAgentGateStatus(request);
+
+  return status ? adapters.github.publishAgentGateStatus(status) : Promise.resolve(undefined);
+}
+
+function createSuccessfulAgentGateStatus(
+  request: ActionRequest,
+): AgentGateCommitStatus | undefined {
+  if (request.action !== "pull_requests.create" && request.action !== "pull_requests.update") {
+    return undefined;
+  }
+
+  const repository = readRequiredString(request.input?.repository);
+  const headSha = readGitHubHeadSha(request.input?.github);
+
+  if (!repository || !headSha) {
+    return undefined;
+  }
+
+  return {
+    description: "AgentGate authorized this repository change.",
+    headSha,
+    repository,
+    state: "success",
+  };
+}
+
+function readGitHubHeadSha(value: unknown): string | undefined {
+  return isRecord(value) ? readRequiredString(value.headSha) : undefined;
 }
 
 function readHeader(header: string | string[] | undefined): string | undefined {
