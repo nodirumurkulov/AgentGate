@@ -17,6 +17,7 @@ This runbook verifies the opt-in real adapter path with a GitHub sandbox reposit
    - Metadata: read-only
    - Pull requests: read and write
    - Contents: read-only
+   - Commit statuses: read-only
 3. Install the app on the sandbox repository only.
 4. Generate a private key and save it locally:
 
@@ -53,6 +54,7 @@ export GITHUB_APP_ID=<github-app-id>
 export GITHUB_APP_PRIVATE_KEY_PATH=.secrets/github-app.private-key.pem
 export GITHUB_INSTALLATION_ID=<github-installation-id>
 export GITHUB_API_BASE_URL=https://api.github.com
+export AGENTGATE_GITHUB_STATUS_CONTEXT=agentgate/authorization
 export GITHUB_WEBHOOK_SECRET=<github-webhook-secret>
 export SLACK_BOT_TOKEN=<slack-bot-token>
 export SLACK_SIGNING_SECRET=<slack-signing-secret>

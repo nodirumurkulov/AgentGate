@@ -4,6 +4,7 @@ import type { IntegrationAdapter, IntegrationResult } from "@agentgate/integrati
 interface GitHubPullRequestAdapterOptions {
   apiBaseUrl?: string;
   fetcher?: typeof fetch;
+  requiredStatusContext?: string;
   tokenProvider: () => Promise<string>;
 }
 
@@ -35,6 +36,15 @@ interface GitHubMergePullRequestResponse {
   sha?: string;
 }
 
+interface GitHubCommitStatus {
+  context?: unknown;
+  state?: unknown;
+}
+
+interface GitHubCombinedStatusResponse {
+  statuses?: unknown;
+}
+
 interface GitHubUpdatePullRequestInput {
   base?: string;
   body?: string;
@@ -45,17 +55,21 @@ interface GitHubUpdatePullRequestInput {
 }
 
 const githubApiVersion = "2022-11-28";
+const defaultRequiredStatusContext = "agentgate/authorization";
 
 export class GitHubPullRequestAdapter implements IntegrationAdapter {
   integration = "github";
 
   private readonly apiBaseUrl: string;
   private readonly fetcher: typeof fetch;
+  private readonly requiredStatusContext: string;
   private readonly tokenProvider: () => Promise<string>;
 
   constructor(options: GitHubPullRequestAdapterOptions) {
     this.apiBaseUrl = options.apiBaseUrl?.replace(/\/$/, "") ?? "https://api.github.com";
     this.fetcher = options.fetcher ?? fetch;
+    this.requiredStatusContext =
+      options.requiredStatusContext?.trim() || defaultRequiredStatusContext;
     this.tokenProvider = options.tokenProvider;
   }
 
@@ -183,6 +197,16 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
     }
 
     const token = await this.tokenProvider();
+    const statusCheckPassed = await this.agentGateStatusCheckPassed(
+      repository,
+      pullRequestInput.value.expectedHeadSha,
+      token,
+    );
+
+    if (!statusCheckPassed) {
+      return githubMergeStatusCheckFailure(this.requiredStatusContext);
+    }
+
     const response = await this.fetcher(
       `${this.apiBaseUrl}/repos/${repository}/pulls/${pullRequestInput.value.pullNumber}/merge`,
       {
@@ -194,6 +218,28 @@ export class GitHubPullRequestAdapter implements IntegrationAdapter {
     const payload = (await response.json()) as GitHubMergePullRequestResponse;
 
     return toMergeResult(response, payload);
+  }
+
+  private async agentGateStatusCheckPassed(
+    repository: string,
+    expectedHeadSha: string,
+    token: string,
+  ): Promise<boolean> {
+    const response = await this.fetcher(
+      `${this.apiBaseUrl}/repos/${repository}/commits/${expectedHeadSha}/status`,
+      {
+        headers: createGitHubHeaders(token),
+        method: "GET",
+      },
+    );
+
+    if (!response.ok) {
+      return false;
+    }
+
+    const payload = (await response.json()) as GitHubCombinedStatusResponse;
+
+    return hasPassingStatusContext(payload, this.requiredStatusContext);
   }
 }
 
@@ -216,6 +262,37 @@ function githubRequestErrorForAction(action: string): string {
   }
 
   return "github_create_pull_request_failed";
+}
+
+function githubMergeStatusCheckFailure(context: string): IntegrationResult {
+  return {
+    data: {
+      context,
+      error: "github_merge_status_check_failed",
+    },
+    ok: false,
+  };
+}
+
+function hasPassingStatusContext(
+  payload: GitHubCombinedStatusResponse,
+  context: string,
+): boolean {
+  if (!Array.isArray(payload.statuses)) {
+    return false;
+  }
+
+  return payload.statuses.some((status) => statusContextPassed(status, context));
+}
+
+function statusContextPassed(status: unknown, context: string): boolean {
+  if (!isRecord(status)) {
+    return false;
+  }
+
+  const value = status as GitHubCommitStatus;
+
+  return value.context === context && value.state === "success";
 }
 
 function toPullRequestResult(

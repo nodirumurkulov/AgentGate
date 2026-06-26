@@ -301,12 +301,24 @@ describe("GitHubPullRequestAdapter", () => {
     const adapter = new GitHubPullRequestAdapter({
       apiBaseUrl: "https://api.github.test",
       fetcher: async (url, init) => {
+        const requestUrl = String(url);
         requests.push({
-          body: JSON.parse(String(init?.body)),
+          body: init?.body ? JSON.parse(String(init.body)) : undefined,
           headers: new Headers(init?.headers),
           method: init?.method ?? "GET",
-          url: String(url),
+          url: requestUrl,
         });
+
+        if (requestUrl.endsWith("/commits/abc123/status")) {
+          return Response.json({
+            statuses: [
+              {
+                context: "agentgate/authorization",
+                state: "success",
+              },
+            ],
+          });
+        }
 
         return Response.json({
           merged: true,
@@ -332,17 +344,23 @@ describe("GitHubPullRequestAdapter", () => {
       },
     });
 
-    expect(requests).toHaveLength(1);
-    const request = requests[0];
+    expect(requests).toHaveLength(2);
+    const statusRequest = requests[0];
+    const mergeRequest = requests[1];
 
-    if (!request) {
-      throw new Error("Expected one GitHub merge PR request.");
+    if (!statusRequest || !mergeRequest) {
+      throw new Error("Expected one GitHub status request and one merge request.");
     }
 
-    expect(request.url).toBe("https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/pulls/7/merge");
-    expect(request.method).toBe("PUT");
-    expect(request.headers.get("authorization")).toBe("Bearer installation-token");
-    expect(request.body).toEqual({
+    expect(statusRequest.url).toBe(
+      "https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/commits/abc123/status",
+    );
+    expect(statusRequest.method).toBe("GET");
+    expect(statusRequest.headers.get("authorization")).toBe("Bearer installation-token");
+    expect(mergeRequest.url).toBe("https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/pulls/7/merge");
+    expect(mergeRequest.method).toBe("PUT");
+    expect(mergeRequest.headers.get("authorization")).toBe("Bearer installation-token");
+    expect(mergeRequest.body).toEqual({
       commit_message: "Reviewed by AgentGate.",
       commit_title: "Merge smoke PR",
       merge_method: "squash",
@@ -356,6 +374,49 @@ describe("GitHubPullRequestAdapter", () => {
       },
       externalRequestId: "abc123",
       ok: true,
+    });
+  });
+
+  it("refuses merge execution without a passing AgentGate status check", async () => {
+    const requests: string[] = [];
+    const adapter = new GitHubPullRequestAdapter({
+      apiBaseUrl: "https://api.github.test",
+      fetcher: async (url) => {
+        requests.push(String(url));
+
+        return Response.json({
+          statuses: [
+            {
+              context: "agentgate/authorization",
+              state: "failure",
+            },
+          ],
+        });
+      },
+      tokenProvider: async () => "installation-token",
+    });
+
+    const result = await adapter.execute({
+      ...createPullRequestAction(),
+      action: "pull_requests.merge",
+      input: {
+        github: {
+          expectedHeadSha: "abc123",
+          pullNumber: 7,
+        },
+        repository: "nodirumurkulov/agentgate-sandbox",
+      },
+    });
+
+    expect(requests).toEqual([
+      "https://api.github.test/repos/nodirumurkulov/agentgate-sandbox/commits/abc123/status",
+    ]);
+    expect(result).toEqual({
+      data: {
+        context: "agentgate/authorization",
+        error: "github_merge_status_check_failed",
+      },
+      ok: false,
     });
   });
 

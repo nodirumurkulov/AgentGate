@@ -32,11 +32,13 @@ export function createGatewayAdapters(options: CreateGatewayAdaptersOptions = {}
   const readTextFile = options.readTextFile ?? ((path: string) => readFileSync(path, "utf8"));
   const privateKeyPem = readTextFile(privateKeyPath);
   const apiBaseUrl = env.GITHUB_API_BASE_URL?.trim();
+  const requiredStatusContext = env.AGENTGATE_GITHUB_STATUS_CONTEXT?.trim();
 
   return {
     github: new GitHubPullRequestAdapter({
       ...(apiBaseUrl ? { apiBaseUrl } : {}),
       ...(options.fetcher ? { fetcher: options.fetcher } : {}),
+      ...(requiredStatusContext ? { requiredStatusContext } : {}),
       tokenProvider: () =>
         getGitHubInstallationAccessToken({
           ...(apiBaseUrl ? { apiBaseUrl } : {}),

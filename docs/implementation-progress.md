@@ -43,20 +43,24 @@ Recent security hardening merged into `main`:
 - PR #30 validates GitHub repository input as a strict `owner/repo` path before token retrieval or network calls.
 - PR #31 requires callback tokens for approvals that have stored token material, closing the signed JSON callback bypass.
 - PR #32 adds dashboard polling from `/v1/audit` and introduces this progress document.
+- PR #33 adds a dependency-free MCP JSON-RPC handler for `initialize`, `tools/list`, and `tools/call`, keeping MCP tool execution routed through the existing AgentGate SDK client.
 
 Current implementation slice:
 
-- Add an MCP JSON-RPC boundary around the existing guarded tool handler.
-- Support `initialize`, `tools/list`, and `tools/call` without adding a new runtime dependency.
-- Keep the stdio-facing message handling small and testable by parsing one line-delimited JSON-RPC message at a time.
+- Add GitHub merge status-check enforcement in the real GitHub adapter.
+- Require a passing AgentGate commit status context for the exact merge `expectedHeadSha` before calling GitHub's merge endpoint.
+- Keep fixture adapters unchanged, so local development and normal CI remain deterministic and network-free.
+- Make the required status context configurable through `AGENTGATE_GITHUB_STATUS_CONTEXT`, defaulting to `agentgate/authorization`.
+
+This closes the most immediate merge-execution gap: a reviewer approval alone should not let an agent merge a different or stale head commit. The real adapter now has to see a status tied to the requested head SHA before it can send `PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge`.
 
 ## What We Are Going To Do Next
 
 The next steps should continue in small reviewable PRs:
 
-1. Finish and merge the MCP stdio handler slice.
-2. Add GitHub status-check enforcement before merge execution, so merge actions can require a known passing AgentGate decision.
+1. Finish and merge the GitHub merge status-check enforcement slice.
+2. Add the status publishing path, so successful AgentGate authorization can create or update the `agentgate/authorization` commit status for the evaluated head SHA.
 3. Run a live sandbox smoke test with real GitHub App and Slack credentials, using only local `.env` or shell secrets.
-4. Use the smoke-test result to decide whether update and merge should stay enabled in real adapters or be narrowed until status-check enforcement is complete.
+4. Use the smoke-test result to decide whether update and merge need more runtime constraints before broader testing.
 
 The final goal is a clean MVP path where an AI coding agent calls AgentGate before GitHub repository-changing actions, AgentGate classifies risk and enforces policy, Slack reviewers approve high-risk changes, and maintainers can inspect a durable audit trail without exposing secrets.
