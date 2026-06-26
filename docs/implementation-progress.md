@@ -45,23 +45,25 @@ Recent security hardening merged into `main`:
 - PR #32 adds dashboard polling from `/v1/audit` and introduces this progress document.
 - PR #33 adds a dependency-free MCP JSON-RPC handler for `initialize`, `tools/list`, and `tools/call`, keeping MCP tool execution routed through the existing AgentGate SDK client.
 - PR #34 requires a passing AgentGate commit status for the exact merge `expectedHeadSha` before the real GitHub adapter can call the merge endpoint.
+- PR #35 publishes the configured AgentGate commit status after successful PR create/update execution when the request includes `github.headSha`.
 
 Current implementation slice:
 
-- Add GitHub commit-status publishing for successful AgentGate-controlled PR create/update executions.
-- Publish `success` to the configured AgentGate status context when the request includes the evaluated `github.headSha`.
-- Report status-publishing failures as integration failures instead of returning an overall successful execution.
-- Carry optional `AGENTGATE_LIVE_PR_HEAD_SHA` through the live smoke request so sandbox testing can exercise the status path.
+- Run the live sandbox smoke test against a sandbox GitHub repository and Slack approval channel.
+- Use local-only GitHub App and Slack credentials; do not commit `.env`, private keys, tokens, screenshots, or raw API responses with sensitive headers.
+- Verify the real create-PR path, Slack approval path, AgentGate status publication, and merge status-check precondition with a known sandbox head SHA.
+- Record only sanitized outputs: decision outcome, draft PR URL, Slack channel/timestamp if useful, and status context/state.
 
-This completes the first closed loop between AgentGate authorization and merge enforcement: create/update execution can mark the evaluated head SHA, and merge execution can require that same SHA to have the passing AgentGate status.
+The implementation is ready for this run, but the run itself requires credentials and sandbox resources that should stay outside the repository.
 
 ## What We Are Going To Do Next
 
 The next steps should continue in small reviewable PRs:
 
-1. Finish and merge the GitHub status publishing slice.
-2. Run a live sandbox smoke test with real GitHub App and Slack credentials, using only local `.env` or shell secrets.
-3. Use the smoke-test result to decide whether update and merge need more runtime constraints before broader testing.
-4. Add any follow-up hardening found during the live run, keeping each change in a separate reviewable PR.
+1. Create or confirm a sandbox repository and a non-sensitive branch containing a test README change.
+2. Provide local-only GitHub App values: app ID, installation ID, private-key path under `.secrets/`, API base URL, and webhook secret if webhooks are enabled.
+3. Provide local-only Slack values: bot token, signing secret, approval channel ID, and public tunnel URL.
+4. Run the live smoke command with `AGENTGATE_LIVE_PR_HEAD_SHA` set to the sandbox branch head commit.
+5. Use the smoke-test result to decide whether update and merge need more runtime constraints before broader testing.
 
 The final goal is a clean MVP path where an AI coding agent calls AgentGate before GitHub repository-changing actions, AgentGate classifies risk and enforces policy, Slack reviewers approve high-risk changes, and maintainers can inspect a durable audit trail without exposing secrets.
