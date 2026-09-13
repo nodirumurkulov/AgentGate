@@ -21,7 +21,8 @@
     "format": "prettier --write .",
     "lint": "eslint .",
     "test": "vitest run",
-    "typecheck": "npm run typecheck --workspaces --if-present"
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "demo:fixture": "npm run demo:fixture -w @agentgate/demo-agent"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

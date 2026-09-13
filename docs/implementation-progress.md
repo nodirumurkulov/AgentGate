@@ -1,5 +1,11 @@
 # AgentGate Implementation Progress
 
+## Documentation and fixture demo update
+
+A self-contained, asserted `npm run demo:fixture` now exercises allow, pending approval and block decisions through the gateway without live credentials. See [demo](fixture-demo.md), [validation](validation.md), [architecture](architecture.md), [contribution](contributions.md) and [security boundary](security-boundary.md). The live sandbox check remains pending. These additions document existing security gaps; they do not harden the production gateway.
+
+The remaining sections record earlier implementation milestones and intended next steps.
+
 ## Problem
 
 AgentGate is being built to stop AI coding agents from landing risky repository changes without runtime authorization. A shallow gate around "create a pull request" is not enough, because the security decision depends on the actual code-change evidence: changed files, deleted files, diff content, requested GitHub action, approval state, and audit history.
@@ -54,7 +60,7 @@ Current implementation slice:
 - Verify the real create-PR path, Slack approval path, AgentGate status publication, and merge status-check precondition with a known sandbox head SHA.
 - Record only sanitized outputs: decision outcome, draft PR URL, Slack channel/timestamp if useful, and status context/state.
 
-The implementation is ready for this run, but the run itself requires credentials and sandbox resources that should stay outside the repository.
+The live smoke script and adapters are implemented, but the run requires separate credentials and sandbox resources. Review the security boundary before attempting it; a successful smoke run would not close those gaps.
 
 ## What We Are Going To Do Next
 
