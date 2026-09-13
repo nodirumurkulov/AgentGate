@@ -1,6 +1,8 @@
 # Live Integration Testing
 
-This runbook verifies the opt-in real adapter path with a GitHub sandbox repository and Slack approval channel. Normal tests stay fixture-only and do not make network calls.
+This runbook describes an opt-in real adapter check with a GitHub sandbox repository and Slack approval channel. It is not evidence of a completed live run. Live GitHub/Slack validation remains pending; see [validation](validation.md). Normal tests use fixtures or mocked HTTP.
+
+Read the [security boundary](security-boundary.md) first. Expose only required signed callback routes through any public tunnel; the action and audit routes have no application-level authentication. The steps below do not configure a protective ingress proxy.
 
 ## Safety Rules
 
@@ -104,6 +106,17 @@ npm run smoke:live -w @agentgate/demo-agent
 ```
 
 Expected output includes the authorization decision and the created draft PR URL. It must not include tokens, private keys, signing secrets, or request headers.
+
+## Remaining live validation
+
+The smoke script above creates a draft PR and optionally publishes a status. It does not itself verify Slack approval/denial, PR metadata updates or merge behaviour. A complete live record should identify the tested commit, Node/npm versions, sandbox repository, date, and sanitised outcomes for:
+
+- Draft PR creation and status publication on a known head SHA.
+- A sensitive request remaining pending until a real Slack decision; approval executes the stored action, denial does not.
+- PR metadata update, and merge rejection without the required status or with a stale head.
+- Successful merge only on an explicitly disposable test PR, using the exact expected head. Merge permissions may require additional GitHub App permissions beyond the create-PR smoke setup above.
+
+Do not infer completion from mocked adapter tests. Record failures and omissions explicitly, and keep credentials and raw sensitive responses out of the evidence.
 
 ## Cleanup
 
